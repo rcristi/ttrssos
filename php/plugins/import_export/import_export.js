@@ -17,7 +17,7 @@ function exportData() {
 				notify_progress("Loading, please wait...");
 
 				new Ajax.Request("backend.php", {
-					parameters: "?op=pluginhandler&plugin=import_export&method=exportrun&offset=" + exported,
+					parameters: "op=pluginhandler&plugin=import_export&method=exportrun&offset=" + exported,
 					onComplete: function(transport) {
 						try {
 							var rv = JSON.parse(transport.responseText);
@@ -37,7 +37,7 @@ function exportData() {
 								} else {
 
 									$("export_status_message").innerHTML =
-										__("Finished, exported %d articles. You can download the data <a class='visibleLink' href='%u'>here</a>.")
+										ngettext("Finished, exported %d article. You can download the data <a class='visibleLink' href='%u'>here</a>.", "Finished, exported %d articles. You can download the data <a class='visibleLink' href='%u'>here</a>.", exported)
 										.replace("%d", exported)
 										.replace("%u", "backend.php?op=pluginhandler&plugin=import_export&subop=exportget");
 

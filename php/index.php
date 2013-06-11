@@ -1,13 +1,25 @@
 <?php
+	if (file_exists("install") && !file_exists("config.php")) {
+		header("Location: install/");
+	}
+
 	if (!file_exists("config.php")) {
 		print "<b>Fatal Error</b>: You forgot to copy
 		<b>config.php-dist</b> to <b>config.php</b> and edit it.\n";
 		exit;
 	}
 
+	// we need a separate check here because functions.php might get parsed
+	// incorrectly before 5.3 because of :: syntax.
+	if (version_compare(PHP_VERSION, '5.3.0', '<')) {
+		print "<b>Fatal Error</b>: PHP version 5.3.0 or newer required.\n";
+		exit;
+	}
+
 	set_include_path(dirname(__FILE__) ."/include" . PATH_SEPARATOR .
 		get_include_path());
 
+	require_once "autoload.php";
 	require_once "sessions.php";
 	require_once "functions.php";
 	require_once "sanity_check.php";
@@ -18,28 +30,22 @@
 
 	$mobile = new Mobile_Detect();
 
-	$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-
-	if (!init_connection($link)) return;
-
-	global $pluginhost;
+	if (!init_plugins()) return;
 
 	if (!$_REQUEST['mobile']) {
-		if ($mobile->isTablet() && $pluginhost->get_plugin("digest")) {
+		if ($mobile->isTablet() && PluginHost::getInstance()->get_plugin("digest")) {
 			header('Location: backend.php?op=digest');
 			exit;
-		} else if ($mobile->isMobile()) {
-			header('Location: mobile/index.php');
+		} else if ($mobile->isMobile() && PluginHost::getInstance()->get_plugin("mobile")) {
+			header('Location: backend.php?op=mobile');
+			exit;
+		} else if ($mobile->isMobile() && PluginHost::getInstance()->get_plugin("digest")) {
+			header('Location: backend.php?op=digest');
 			exit;
 		}
 	}
 
-
-	login_sequence($link);
-
-	$dt_add = time();
-
-	no_cache_incantation();
+	login_sequence();
 
 	header('Content-Type: text/html; charset=utf-8');
 
@@ -49,45 +55,60 @@
 <html>
 <head>
 	<title>Tiny Tiny RSS</title>
-	<link rel="stylesheet" type="text/css" href="lib/dijit/themes/claro/claro.css"/>
-	<link rel="stylesheet" type="text/css" href="tt-rss.css?<?php echo $dt_add ?>"/>
-	<link rel="stylesheet" type="text/css" href="cdm.css?<?php echo $dt_add ?>"/>
 
-	<?php print_user_stylesheet($link) ?>
+	<?php stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
+	<?php stylesheet_tag("tt-rss.css"); ?>
+	<?php stylesheet_tag("cdm.css"); ?>
 
-	<script type="text/javascript">
-	</script>
+	<?php if ($_SESSION["uid"]) {
+		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
+		if ($theme) {
+			stylesheet_tag("themes/$theme");
+		}
+	}
+	?>
+
+	<?php print_user_stylesheet() ?>
+
+	<style type="text/css">
+	<?php
+		foreach (PluginHost::getInstance()->get_plugins() as $n => $p) {
+			if (method_exists($p, "get_css")) {
+				echo $p->get_css();
+			}
+		}
+	?>
+	</style>
 
 	<link rel="shortcut icon" type="image/png" href="images/favicon.png"/>
+	<link rel="icon" type="image/png" sizes="72x72" href="images/favicon-72px.png" />
 
-	<script type="text/javascript" src="lib/prototype.js"></script>
-	<script type="text/javascript" src="lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls"></script>
-	<script type="text/javascript" src="lib/dojo/dojo.js"></script>
-	<script type="text/javascript" src="lib/dijit/dijit.js"></script>
-	<script type="text/javascript" src="lib/dojo/tt-rss-layer.js"></script>
+	<?php
+	foreach (array("lib/prototype.js",
+				"lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls",
+				"lib/dojo/dojo.js",
+				"lib/dijit/dijit.js",
+				"lib/dojo/tt-rss-layer.js",
+				"errors.php?mode=js") as $jsfile) {
 
-	<script type="text/javascript" charset="utf-8" src="localized_js.php?<?php echo $dt_add ?>"></script>
-	<script type="text/javascript" charset="utf-8" src="errors.php?mode=js"></script>
+		javascript_tag($jsfile);
+
+	} ?>
 
 	<script type="text/javascript">
 	<?php
-		require 'lib/jsmin.php';
+		require 'lib/jshrink/Minifier.php';
 
-		global $pluginhost;
+		print get_minified_js(array("tt-rss",
+			"functions", "feedlist", "viewfeed", "FeedTree", "PluginHost"));
 
-		foreach ($pluginhost->get_plugins() as $n => $p) {
+		foreach (PluginHost::getInstance()->get_plugins() as $n => $p) {
 			if (method_exists($p, "get_js")) {
-				echo JSMin::minify($p->get_js());
+				echo JShrink\Minifier::minify($p->get_js());
 			}
 		}
 
-		foreach (array("tt-rss", "functions", "feedlist", "viewfeed", "FeedTree") as $js) {
-			if (!isset($_GET['debug'])) {
-				echo JSMin::minify(file_get_contents("js/$js.js"));
-			} else {
-				echo file_get_contents("js/$js.js");
-			}
-		}
+		init_js_translations();
 	?>
 	</script>
 
@@ -112,21 +133,8 @@
 	</div>
 </div>
 
-<div id="header">
-	<img id="net-alert" style="display : none"
-		title="<?php echo __("Communication problem with server.") ?>"
-		src="<?php echo theme_image($link, 'images/alert.png') ?>"/>
-
-	<img id="newVersionIcon" style="display:none" onclick="newVersionDlg()"
-		width="13" height="13"
-		src="<?php echo theme_image($link, 'images/new_version.png') ?>"
-		title="<?php echo __('New version of Tiny Tiny RSS is available!') ?>"
-		alt="new_version_icon"/>
-</div>
-
-<div id="notify" class="notify"><span id="notify_body">&nbsp;</span></div>
+<div id="notify" class="notify" style="display : none"></div>
 <div id="cmdline" style="display : none"></div>
-<div id="auxDlg" style="display : none"></div>
 <div id="headlines-tmp" style="display : none"></div>
 
 <div id="main" dojoType="dijit.layout.BorderContainer">
@@ -159,40 +167,54 @@
 			<option value="marked"><?php echo __('Starred') ?></option>
 			<option value="published"><?php echo __('Published') ?></option>
 			<option value="unread"><?php echo __('Unread') ?></option>
+			<option value="unread_first"><?php echo __('Unread First') ?></option>
+			<option value="has_note"><?php echo __('With Note') ?></option>
 			<!-- <option value="noscores"><?php echo __('Ignore Scoring') ?></option> -->
-			<option value="updated"><?php echo __('Updated') ?></option>
 		</select>
 
 		<select title="<?php echo __('Sort articles') ?>"
 			onchange="viewModeChanged()"
 			dojoType="dijit.form.Select" name="order_by">
 			<option selected="selected" value="default"><?php echo __('Default') ?></option>
-			<option value="date"><?php echo __('Date') ?></option>
+			<option value="feed_dates"><?php echo __('Newest first') ?></option>
+			<option value="date_reverse"><?php echo __('Oldest first') ?></option>
 			<option value="title"><?php echo __('Title') ?></option>
-			<option value="score"><?php echo __('Score') ?></option>
 		</select>
 
-		<button dojoType="dijit.form.Button" name="update"
-			onclick="viewCurrentFeed()">
-			<?php echo __('Update') ?></button>
-
-		<button dojoType="dijit.form.Button"
-			onclick="catchupCurrentFeed()">
-			<?php echo __('Mark as read') ?></button>
+		<div dojoType="dijit.form.ComboButton" onclick="catchupCurrentFeed()">
+			<span><?php echo __('Mark as read') ?></span>
+			<div dojoType="dijit.DropDownMenu">
+				<div dojoType="dijit.MenuItem" onclick="catchupCurrentFeed('1day')">
+					<?php echo __('Older than one day') ?>
+				</div>
+				<div dojoType="dijit.MenuItem" onclick="catchupCurrentFeed('1week')">
+					<?php echo __('Older than one week') ?>
+				</div>
+				<div dojoType="dijit.MenuItem" onclick="catchupCurrentFeed('2week')">
+					<?php echo __('Older than two weeks') ?>
+				</div>
+			</div>
+		</div>
 
 		</form>
 
 		<div class="actionChooser">
 
+			<?php
+				foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_TOOLBAR_BUTTON) as $p) {
+					 echo $p->hook_toolbar_button();
+				}
+			?>
+
 			<button id="net-alert" dojoType="dijit.form.Button" style="display : none" disabled="true"
 				title="<?php echo __("Communication problem with server.") ?>">
 			<img
-				src="<?php echo theme_image($link, 'images/alert.png') ?>" />
+				src="images/alert.png" />
 			</button>
 
 			<button id="newVersionIcon" dojoType="dijit.form.Button" style="display : none">
 			<img onclick="newVersionDlg()"
-				src="<?php echo theme_image($link, 'images/new_version.png') ?>"
+				src="images/new_version.png"
 				title="<?php echo __('New version of Tiny Tiny RSS is available!') ?>" />
 			</button>
 
@@ -205,23 +227,24 @@
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('Feed actions:') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddFeed')"><?php echo __('Subscribe to feed...') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcEditFeed')"><?php echo __('Edit this feed...') ?></div>
-					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcRescoreFeed')"><?php echo __('Rescore feed') ?></div>
+					<!-- <div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcRescoreFeed')"><?php echo __('Rescore feed') ?></div> -->
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcRemoveFeed')"><?php echo __('Unsubscribe') ?></div>
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('All feeds:') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcCatchupAll')"><?php echo __('Mark as read') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcShowOnlyUnread')"><?php echo __('(Un)hide read feeds') ?></div>
 					<div dojoType="dijit.MenuItem" disabled="1"><?php echo __('Other actions:') ?></div>
-					<?php if ($pluginhost->get_plugin("digest")) { ?>
-					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcDigest')"><?php echo __('Switch to digest...') ?></div>
-					<?php } ?>
-						<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcTagCloud')"><?php echo __('Show tag cloud...') ?></div>
-					<?php if (!get_pref($link, 'COMBINED_DISPLAY_MODE')) { ?>
-							<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcToggleWidescreen')"><?php echo __('Toggle widescreen mode') ?></div>
-					<?php } ?>
+					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcToggleWidescreen')"><?php echo __('Toggle widescreen mode') ?></div>
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcTagSelect')"><?php echo __('Select by tags...') ?></div>
-					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddLabel')"><?php echo __('Create label...') ?></div>
-					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddFilter')"><?php echo __('Create filter...') ?></div>
+					<!-- <div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddLabel')"><?php echo __('Create label...') ?></div>
+					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcAddFilter')"><?php echo __('Create filter...') ?></div> -->
 					<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcHKhelp')"><?php echo __('Keyboard shortcuts help') ?></div>
+
+					<?php
+						foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_ACTION_ITEM) as $p) {
+						 echo $p->hook_action_item();
+						}
+					?>
+
 					<?php if (!$_SESSION["hide_logout"]) { ?>
 						<div dojoType="dijit.MenuItem" onclick="quickMenuGo('qmcLogout')"><?php echo __('Logout') ?></div>
 					<?php } ?>
@@ -243,17 +266,13 @@
 			</div>
 		</div>
 
-		<?php if (!get_pref($link, 'COMBINED_DISPLAY_MODE')) { ?>
 		<div id="content-insert" dojoType="dijit.layout.ContentPane" region="bottom"
 			style="height : 50%" splitter="true"></div>
-		<?php } ?>
 
 	</div>
 </div>
 </div>
 </div>
-
-<?php db_close($link); ?>
 
 </body>
 </html>

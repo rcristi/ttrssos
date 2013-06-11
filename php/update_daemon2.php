@@ -9,23 +9,21 @@
 	define('DISABLE_SESSIONS', true);
 
 	require_once "version.php";
-
-	if (strpos(VERSION, ".99") !== false || getenv('DAEMON_XDEBUG')) {
-		define('DAEMON_EXTENDED_DEBUG', true);
-	}
-
-	define('PURGE_INTERVAL', 3600); // seconds
-	define('MAX_CHILD_RUNTIME', 600); // seconds
-
+	require_once "config.php";
+	require_once "autoload.php";
 	require_once "functions.php";
 	require_once "rssfuncs.php";
+
+	// defaults
+	define_default('PURGE_INTERVAL', 3600); // seconds
+	define_default('MAX_CHILD_RUNTIME', 1800); // seconds
+	define_default('MAX_JOBS', 2);
+	define_default('SPAWN_INTERVAL', DAEMON_SLEEP_INTERVAL); // seconds
+
 	require_once "sanity_check.php";
-	require_once "config.php";
 	require_once "db.php";
 	require_once "db-prefs.php";
 
-	define('MAX_JOBS', 2);
-	define('SPAWN_INTERVAL', DAEMON_SLEEP_INTERVAL);
 
 	if (!function_exists('pcntl_fork')) {
 		die("error: This script requires PHP compiled with PCNTL module.\n");
@@ -118,6 +116,47 @@
 
 	pcntl_signal(SIGCHLD, 'sigchld_handler');
 
+	$longopts = array("log:",
+			"tasks:",
+			"interval:",
+			"quiet",
+			"help");
+
+	$options = getopt("", $longopts);
+
+	if (isset($options["help"]) ) {
+		print "Tiny Tiny RSS update daemon.\n\n";
+		print "Options:\n";
+		print "  --log FILE           - log messages to FILE\n";
+		print "  --tasks N            - amount of update tasks to spawn\n";
+		print "                         default: " . MAX_JOBS . "\n";
+		print "  --interval N         - task spawn interval\n";
+		print "                         default: " . SPAWN_INTERVAL . " seconds.\n";
+		print "  --quiet              - don't output messages to stdout\n";
+		return;
+	}
+
+	define('QUIET', isset($options['quiet']));
+
+	if (isset($options["tasks"])) {
+		_debug("Set to spawn " . $options["tasks"] . " children.");
+		$max_jobs = $options["tasks"];
+	} else {
+		$max_jobs = MAX_JOBS;
+	}
+
+	if (isset($options["interval"])) {
+		_debug("Spawn interval: " . $options["interval"] . " seconds.");
+		$spawn_interval = $options["interval"];
+	} else {
+		$spawn_interval = SPAWN_INTERVAL;
+	}
+
+	if (isset($options["log"])) {
+		_debug("Logging to " . $options["log"]);
+		define('LOGFILE', $options["log"]);
+	}
+
 	if (file_is_locked("update_daemon.lock")) {
 		die("error: Can't create lockfile. ".
 			"Maybe another daemon is already running.\n");
@@ -131,31 +170,31 @@
 			"Maybe another daemon is already running.\n");
 	}
 
-	// Testing database connection.
-	// It is unnecessary to start the fork loop if database is not ok.
-	$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+	$schema_version = get_schema_version();
 
-	if (!init_connection($link)) return;
+	if ($schema_version != SCHEMA_VERSION) {
+		die("Schema version is wrong, please upgrade the database.\n");
+	}
 
-	db_close($link);
+	// Protip: children close shared database handle when terminating, it's a bad idea to
+	// do database stuff on main process from now on.
 
 	while (true) {
 
 		// Since sleep is interupted by SIGCHLD, we need another way to
-		// respect the SPAWN_INTERVAL
-		$next_spawn = $last_checkpoint + SPAWN_INTERVAL - time();
+		// respect the spawn interval
+		$next_spawn = $last_checkpoint + $spawn_interval - time();
 
-		if ($next_spawn % 10 == 0) {
+		if ($next_spawn % 60 == 0) {
 			$running_jobs = count($children);
 			_debug("[MASTER] active jobs: $running_jobs, next spawn at $next_spawn sec.");
 		}
 
-		if ($last_checkpoint + SPAWN_INTERVAL < time()) {
-
+		if ($last_checkpoint + $spawn_interval < time()) {
 			check_ctimes();
 			reap_children();
 
-			for ($j = count($children); $j < MAX_JOBS; $j++) {
+			for ($j = count($children); $j < $max_jobs; $j++) {
 				$pid = pcntl_fork();
 				if ($pid == -1) {
 					die("fork failed!\n");
@@ -177,67 +216,17 @@
 
 					register_shutdown_function('task_shutdown');
 
+					$quiet = (isset($options["quiet"])) ? "--quiet" : "";
+
 					$my_pid = posix_getpid();
-					$lock_filename = "update_daemon-$my_pid.lock";
 
-					$lock_handle = make_lockfile($lock_filename);
+					passthru(PHP_EXECUTABLE . " update.php --daemon-loop $quiet --task $j --pidlock $my_pid");
 
-					if (!$lock_handle) {
-						die("error: Can't create lockfile ($lock_filename). ".
-						"Maybe another daemon is already running.\n");
-					}
-
-					// ****** Updating RSS code *******
-					// Only run in fork process.
-
-					$start_timestamp = time();
-
-					$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-
-					if (!init_connection($link)) return;
-
-					// We disable stamp file, since it is of no use in a multiprocess update.
-					// not really, tho for the time being -fox
-					if (!make_stampfile('update_daemon.stamp')) {
-						die("error: unable to create stampfile\n");
-					}
-
-					// Call to the feed batch update function
-					// or regenerate feedbrowser cache
-
-					if (rand(0,100) > 30) {
-						update_daemon_common($link);
-					} else {
-						$count = update_feedbrowser_cache($link);
-						_debug("Feedbrowser updated, $count feeds processed.");
-
-						purge_orphans($link, true);
-
-						$rc = cleanup_tags($link, 14, 50000);
-
-						_debug("Cleaned $rc cached tags.");
-
-						global $pluginhost;
-						$pluginhost->run_hooks($pluginhost::HOOK_UPDATE_TASK, "hook_update_task", $op);
-					}
-
-					_debug("Elapsed time: " . (time() - $start_timestamp) . " second(s)");
-
-					db_close($link);
-
-					// We are in a fork.
-					// We wait a little before exiting to avoid to be faster than our parent process.
 					sleep(1);
-
-					unlink(LOCK_DIRECTORY . "/$lock_filename");
 
 					// We exit in order to avoid fork bombing.
 					exit(0);
 				}
-
-				// We wait a little time before the next fork, in order to let the first fork
-				// mark the feeds it update :
-				sleep(1);
 			}
 			$last_checkpoint = time();
 		}

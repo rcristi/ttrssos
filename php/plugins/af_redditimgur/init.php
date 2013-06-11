@@ -1,7 +1,5 @@
 <?php
 class Af_RedditImgur extends Plugin {
-
-	private $link;
 	private $host;
 
 	function about() {
@@ -11,7 +9,6 @@ class Af_RedditImgur extends Plugin {
 	}
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_ARTICLE_FILTER, $this);
@@ -40,7 +37,9 @@ class Af_RedditImgur extends Plugin {
 							 	$img = $doc->createElement('img');
 								$img->setAttribute("src", $entry->getAttribute("href"));
 
-								$entry->parentNode->replaceChild($img, $entry);
+								$br = $doc->createElement('br');
+								$entry->parentNode->insertBefore($img, $entry);
+								$entry->parentNode->insertBefore($br, $entry);
 
 								$found = true;
 							}
@@ -66,7 +65,12 @@ class Af_RedditImgur extends Plugin {
 											if (preg_match("/^http:\/\/i.imgur.com\/$token\./", $aentry->getAttribute("src"))) {
 												$img = $doc->createElement('img');
 												$img->setAttribute("src", $aentry->getAttribute("src"));
+
+												$br = $doc->createElement('br');
+
 												$entry->parentNode->insertBefore($img, $entry);
+												$entry->parentNode->insertBefore($br, $entry);
+
 												$found = true;
 
 												break;
@@ -94,7 +98,12 @@ class Af_RedditImgur extends Plugin {
 											$img = $doc->createElement('img');
 											$img->setAttribute("src", $aentry->getAttribute("href"));
 											$entry->parentNode->insertBefore($doc->createElement('br'), $entry);
+
+											$br = $doc->createElement('br');
+
 											$entry->parentNode->insertBefore($img, $entry);
+											$entry->parentNode->insertBefore($br, $entry);
+
 											$found = true;
 										}
 									}
@@ -113,7 +122,7 @@ class Af_RedditImgur extends Plugin {
 					$node = $doc->getElementsByTagName('body')->item(0);
 
 					if ($node && $found) {
-						$article["content"] = $doc->saveXML($node, LIBXML_NOEMPTYTAG);
+						$article["content"] = $doc->saveXML($node);
 						if (!$force) $article["plugin_data"] = "redditimgur,$owner_uid:" . $article["plugin_data"];
 					}
 				}
@@ -124,5 +133,10 @@ class Af_RedditImgur extends Plugin {
 
 		return $article;
 	}
+
+	function api_version() {
+		return 2;
+	}
+
 }
 ?>

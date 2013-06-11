@@ -1,7 +1,6 @@
 <?php
 class Mail extends Plugin {
 
-	private $link;
 	private $host;
 
 	function about() {
@@ -11,7 +10,6 @@ class Mail extends Plugin {
 	}
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_ARTICLE_BUTTON, $this);
@@ -22,7 +20,7 @@ class Mail extends Plugin {
 	}
 
 	function hook_article_button($line) {
-		return "<img src=\"".theme_image($link, 'plugins/mail/mail.png')."\"
+		return "<img src=\"plugins/mail/mail.png\"
 					class='tagsPic' style=\"cursor : pointer\"
 					onclick=\"emailArticle(".$line["id"].")\"
 					alt='Zoom' title='".__('Forward by email')."'>";
@@ -32,16 +30,11 @@ class Mail extends Plugin {
 
 		$param = db_escape_string($_REQUEST['param']);
 
-		$secretkey = sha1(uniqid(rand(), true));
-
-		$_SESSION['email_secretkey'] = $secretkey;
-
-		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"secretkey\" value=\"$secretkey\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"op\" value=\"pluginhandler\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"plugin\" value=\"mail\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"method\" value=\"sendEmail\">";
 
-		$result = db_query($this->link, "SELECT email, full_name FROM ttrss_users WHERE
+		$result = db_query("SELECT email, full_name FROM ttrss_users WHERE
 			id = " . $_SESSION["uid"]);
 
 		$user_email = htmlspecialchars(db_fetch_result($result, 0, "email"));
@@ -49,8 +42,8 @@ class Mail extends Plugin {
 
 		if (!$user_name) $user_name = $_SESSION['name'];
 
-		$_SESSION['email_replyto'] = $user_email;
-		$_SESSION['email_fromname'] = $user_name;
+		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"from_email\" value=\"$user_email\">";
+		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"from_name\" value=\"$user_name\">";
 
 		require_once "lib/MiniTemplator.class.php";
 
@@ -59,12 +52,11 @@ class Mail extends Plugin {
 
 		$tpl->readTemplateFromFile("templates/email_article_template.txt");
 
-		$tpl->setVariable('USER_NAME', $_SESSION["name"]);
-		$tpl->setVariable('USER_EMAIL', $user_email);
-		$tpl->setVariable('TTRSS_HOST', $_SERVER["HTTP_HOST"]);
+		$tpl->setVariable('USER_NAME', $_SESSION["name"], true);
+		$tpl->setVariable('USER_EMAIL', $user_email, true);
+		$tpl->setVariable('TTRSS_HOST', $_SERVER["HTTP_HOST"], true);
 
-
-		$result = db_query($this->link, "SELECT link, content, title
+		$result = db_query("SELECT link, content, title
 			FROM ttrss_user_entries, ttrss_entries WHERE id = ref_id AND
 			id IN ($param) AND owner_uid = " . $_SESSION["uid"]);
 
@@ -136,58 +128,27 @@ class Mail extends Plugin {
 	}
 
 	function sendEmail() {
-		$secretkey = $_REQUEST['secretkey'];
-
-		require_once 'lib/phpmailer/class.phpmailer.php';
+		require_once 'classes/ttrssmailer.php';
 
 		$reply = array();
 
-		if ($_SESSION['email_secretkey'] &&
-		$secretkey == $_SESSION['email_secretkey']) {
+		$mail = new ttrssMailer();
 
-			$_SESSION['email_secretkey'] = '';
+		$mail->From = strip_tags($_REQUEST['from_email']);
+		$mail->FromName = strip_tags($_REQUEST['from_name']);
+		$mail->AddAddress($_REQUEST['destination']);
 
-			$destination = $_REQUEST['destination'];
-			$subject = $_REQUEST['subject'];
-			$content = $_REQUEST['content'];
+		$mail->IsHTML(false);
+		$mail->Subject = $_REQUEST['subject'];
+		$mail->Body = $_REQUEST['content'];
 
-			$replyto = strip_tags($_SESSION['email_replyto']);
-			$fromname = strip_tags($_SESSION['email_fromname']);
+		$rc = $mail->Send();
 
-			$mail = new PHPMailer();
-
-			$mail->PluginDir = "lib/phpmailer/";
-			$mail->SetLanguage("en", "lib/phpmailer/language/");
-
-			$mail->CharSet = "UTF-8";
-
-			$mail->From = $replyto;
-			$mail->FromName = $fromname;
-			$mail->AddAddress($destination);
-
-			if (SMTP_HOST) {
-				$mail->Host = SMTP_HOST;
-				$mail->Mailer = "smtp";
-				$mail->SMTPAuth = SMTP_LOGIN != '';
-				$mail->Username = SMTP_LOGIN;
-				$mail->Password = SMTP_PASSWORD;
-			}
-
-			$mail->IsHTML(false);
-			$mail->Subject = $subject;
-			$mail->Body = $content;
-
-			$rc = $mail->Send();
-
-			if (!$rc) {
-				$reply['error'] =  $mail->ErrorInfo;
-			} else {
-				save_email_address($this->link, db_escape_string($destination));
-				$reply['message'] = "UPDATE_COUNTERS";
-			}
-
+		if (!$rc) {
+			$reply['error'] =  $mail->ErrorInfo;
 		} else {
-			$reply['error'] = "Not authorized.";
+			save_email_address(db_escape_string($destination));
+			$reply['message'] = "UPDATE_COUNTERS";
 		}
 
 		print json_encode($reply);
@@ -207,6 +168,9 @@ class Mail extends Plugin {
 		print "</ul>";
 	}
 
+	function api_version() {
+		return 2;
+	}
 
 }
 ?>

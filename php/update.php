@@ -7,24 +7,42 @@
 
 	chdir(dirname(__FILE__));
 
+	require_once "autoload.php";
 	require_once "functions.php";
 	require_once "rssfuncs.php";
-	require_once "sanity_check.php";
 	require_once "config.php";
+	require_once "sanity_check.php";
 	require_once "db.php";
 	require_once "db-prefs.php";
 
 	if (!defined('PHP_EXECUTABLE'))
 		define('PHP_EXECUTABLE', '/usr/bin/php');
 
-	// Create a database connection.
-	$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+	init_plugins();
 
-	init_connection($link);
+	$longopts = array("feeds",
+			"feedbrowser",
+			"daemon",
+			"daemon-loop",
+			"task:",
+			"cleanup-tags",
+			"quiet",
+			"log:",
+			"indexes",
+			"pidlock:",
+			"update-schema",
+			"convert-filters",
+			"force-update",
+			"list-plugins",
+			"help");
 
-	$op = $argv;
+	foreach (PluginHost::getInstance()->get_commands() as $command => $data) {
+		array_push($longopts, $command . $data["suffix"]);
+	}
 
-	if (count($argv) == 0 && !defined('STDIN')) {
+	$options = getopt("", $longopts);
+
+	if (count($options) == 0 && !defined('STDIN')) {
 		?> <html>
 		<head>
 		<title>Tiny Tiny RSS data update script.</title>
@@ -33,7 +51,7 @@
 		</head>
 
 		<body>
-		<div class="floatingLogo"><img src="images/logo_wide.png"></div>
+		<div class="floatingLogo"><img src="images/logo_small.png"></div>
 		<h1><?php echo __("Tiny Tiny RSS data update script.") ?></h1>
 
 		<?php print_error("Please run this script from the command line. Use option \"-help\" to display command help if this error is displayed erroneously."); ?>
@@ -43,38 +61,78 @@
 		exit;
 	}
 
-	if (count($argv) == 1 || in_array("-help", $op) ) {
+	if (count($options) == 0 || isset($options["help"]) ) {
 		print "Tiny Tiny RSS data update script.\n\n";
 		print "Options:\n";
-		print "  -feeds              - update feeds\n";
-		print "  -feedbrowser        - update feedbrowser\n";
-		print "  -daemon             - start single-process update daemon\n";
-		print "  -cleanup-tags       - perform tags table maintenance\n";
-		print "  -quiet              - don't show messages\n";
-		print "  -indexes            - recreate missing schema indexes\n";
-		print "  -convert-filters    - convert type1 filters to type2\n";
-		print "  -force-update       - force update of all feeds\n";
-		print "  -list-plugins       - list all available plugins\n";
-		print "  -help               - show this help\n";
+		print "  --feeds              - update feeds\n";
+		print "  --feedbrowser        - update feedbrowser\n";
+		print "  --daemon             - start single-process update daemon\n";
+		print "  --task N             - create lockfile using this task id\n";
+		print "  --cleanup-tags       - perform tags table maintenance\n";
+		print "  --quiet              - don't output messages to stdout\n";
+		print "  --log FILE           - log messages to FILE\n";
+		print "  --indexes            - recreate missing schema indexes\n";
+		print "  --update-schema      - update database schema\n";
+		print "  --convert-filters    - convert type1 filters to type2\n";
+		print "  --force-update       - force update of all feeds\n";
+		print "  --list-plugins       - list all available plugins\n";
+		print "  --help               - show this help\n";
 		print "Plugin options:\n";
 
-		foreach ($pluginhost->get_commands() as $command => $data) {
-			printf("  %-19s - %s\n", "$command", $data["description"]);
+		foreach (PluginHost::getInstance()->get_commands() as $command => $data) {
+			$args = $data['arghelp'];
+			printf(" --%-19s - %s\n", "$command $args", $data["description"]);
 		}
 
 		return;
 	}
 
-	define('QUIET', in_array("-quiet", $op));
+	if (!isset($options['daemon'])) {
+		require_once "errorhandler.php";
+	}
 
-	if (!in_array("-daemon", $op)) {
+	if (!isset($options['update-schema'])) {
+		$schema_version = get_schema_version();
+
+		if ($schema_version != SCHEMA_VERSION) {
+			die("Schema version is wrong, please upgrade the database.\n");
+		}
+	}
+
+	define('QUIET', isset($options['quiet']));
+
+	if (isset($options["log"])) {
+		_debug("Logging to " . $options["log"]);
+		define('LOGFILE', $options["log"]);
+	}
+
+	if (!isset($options["daemon"])) {
 		$lock_filename = "update.lock";
 	} else {
 		$lock_filename = "update_daemon.lock";
 	}
 
+	if (isset($options["task"])) {
+		_debug("Using task id " . $options["task"]);
+		$lock_filename = $lock_filename . "-task_" . $options["task"];
+	}
+
+	if (isset($options["pidlock"])) {
+		$my_pid = $options["pidlock"];
+		$lock_filename = "update_daemon-$my_pid.lock";
+
+	}
+
+	_debug("Lock: $lock_filename");
+
 	$lock_handle = make_lockfile($lock_filename);
 	$must_exit = false;
+
+	if (isset($options["task"]) && isset($options["pidlock"])) {
+		$waits = $options["task"] * 5;
+		_debug("Waiting before update ($waits)");
+		sleep($waits);
+	}
 
 	// Try to lock a file in order to avoid concurrent update.
 	if (!$lock_handle) {
@@ -82,70 +140,52 @@
 			"Maybe another update process is already running.\n");
 	}
 
-	if (in_array("-feeds", $op)) {
-		// Update all feeds needing a update.
-		update_daemon_common($link);
+	if (isset($options["force-update"])) {
+		_debug("marking all feeds as needing update...");
 
-		// Update feedbrowser
-		$count = update_feedbrowser_cache($link);
-		_debug("Feedbrowser updated, $count feeds processed.");
-
-		// Purge orphans and cleanup tags
-		purge_orphans($link, true);
-
-		$rc = cleanup_tags($link, 14, 50000);
-		_debug("Cleaned $rc cached tags.");
-
-		global $pluginhost;
-		$pluginhost->run_hooks($pluginhost::HOOK_UPDATE_TASK, "hook_update_task", $op);
+		db_query( "UPDATE ttrss_feeds SET last_update_started = '1970-01-01',
+				last_updated = '1970-01-01'");
 	}
 
-	if (in_array("-feedbrowser", $op)) {
-		$count = update_feedbrowser_cache($link);
+	if (isset($options["feeds"])) {
+		update_daemon_common();
+		housekeeping_common(true);
+
+		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $op);
+	}
+
+	if (isset($options["feedbrowser"])) {
+		$count = update_feedbrowser_cache();
 		print "Finished, $count feeds processed.\n";
 	}
 
-	if (in_array("-daemon", $op)) {
-		$op = array_diff($op, array("-daemon"));
+	if (isset($options["daemon"])) {
 		while (true) {
-			passthru(PHP_EXECUTABLE . " " . implode(' ', $op) . " -daemon-loop");
+			$quiet = (isset($options["quiet"])) ? "--quiet" : "";
+
+			passthru(PHP_EXECUTABLE . " " . $argv[0] ." --daemon-loop $quiet");
 			_debug("Sleeping for " . DAEMON_SLEEP_INTERVAL . " seconds...");
 			sleep(DAEMON_SLEEP_INTERVAL);
 		}
 	}
 
-	if (in_array("-daemon-loop", $op)) {
+	if (isset($options["daemon-loop"])) {
 		if (!make_stampfile('update_daemon.stamp')) {
-			die("error: unable to create stampfile\n");
+			_debug("warning: unable to create stampfile\n");
 		}
 
-		// Call to the feed batch update function
-		// or regenerate feedbrowser cache
+		update_daemon_common(isset($options["pidlock"]) ? 50 : DAEMON_FEED_LIMIT);
+		housekeeping_common(true);
 
-		if (rand(0,100) > 30) {
-			update_daemon_common($link);
-		} else {
-			$count = update_feedbrowser_cache($link);
-			_debug("Feedbrowser updated, $count feeds processed.");
-
-			purge_orphans($link, true);
-
-			$rc = cleanup_tags($link, 14, 50000);
-
-			_debug("Cleaned $rc cached tags.");
-
-			global $pluginhost;
-			$pluginhost->run_hooks($pluginhost::HOOK_UPDATE_TASK, "hook_update_task", $op);
-		}
-
+		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $op);
 	}
 
-	if (in_array("-cleanup-tags", $op)) {
-		$rc = cleanup_tags($link, 14, 50000);
+	if (isset($options["cleanup-tags"])) {
+		$rc = cleanup_tags( 14, 50000);
 		_debug("$rc tags deleted.\n");
 	}
 
-	if (in_array("-indexes", $op)) {
+	if (isset($options["indexes"])) {
 		_debug("PLEASE BACKUP YOUR DATABASE BEFORE PROCEEDING!");
 		_debug("Type 'yes' to continue.");
 
@@ -155,12 +195,12 @@
 		_debug("clearing existing indexes...");
 
 		if (DB_TYPE == "pgsql") {
-			$result = db_query($link, "SELECT relname FROM
+			$result = db_query( "SELECT relname FROM
 				pg_catalog.pg_class WHERE relname LIKE 'ttrss_%'
 					AND relname NOT LIKE '%_pkey'
 				AND relkind = 'i'");
 		} else {
-			$result = db_query($link, "SELECT index_name,table_name FROM
+			$result = db_query( "SELECT index_name,table_name FROM
 				information_schema.statistics WHERE index_name LIKE 'ttrss_%'");
 		}
 
@@ -173,7 +213,7 @@
 					$line['table_name']." DROP INDEX ".$line['index_name'];
 				_debug($statement);
 			}
-			db_query($link, $statement, false);
+			db_query( $statement, false);
 		}
 
 		_debug("reading indexes from schema for: " . DB_TYPE);
@@ -190,7 +230,7 @@
 					$statement = "CREATE INDEX $index ON $table";
 
 					_debug($statement);
-					db_query($link, $statement);
+					db_query( $statement);
 				}
 			}
 			fclose($fp);
@@ -200,7 +240,7 @@
 		_debug("all done.");
 	}
 
-	if (in_array("-convert-filters", $op)) {
+	if (isset($options["convert-filters"])) {
 		_debug("WARNING: this will remove all existing type2 filters.");
 		_debug("Type 'yes' to continue.");
 
@@ -209,9 +249,9 @@
 
 		_debug("converting filters...");
 
-		db_query($link, "DELETE FROM ttrss_filters2");
+		db_query( "DELETE FROM ttrss_filters2");
 
-		$result = db_query($link, "SELECT * FROM ttrss_filters ORDER BY id");
+		$result = db_query( "SELECT * FROM ttrss_filters ORDER BY id");
 
 		while ($line = db_fetch_assoc($result)) {
 			$owner_uid = $line["owner_uid"];
@@ -244,22 +284,44 @@
 				$_REQUEST = $filter;
 				$_SESSION["uid"] = $owner_uid;
 
-				$filters = new Pref_Filters($link, $_REQUEST);
+				$filters = new Pref_Filters($_REQUEST);
 				$filters->add();
 			}
 		}
 
 	}
 
-	if (in_array("-force-update", $op)) {
-		_debug("marking all feeds as needing update...");
+	if (isset($options["update-schema"])) {
+		_debug("checking for updates (" . DB_TYPE . ")...");
 
-		db_query($link, "UPDATE ttrss_feeds SET last_update_started = '1970-01-01',
-				last_updated = '1970-01-01'");
+		$updater = new DbUpdater(Db::get(), DB_TYPE, SCHEMA_VERSION);
+
+		if ($updater->isUpdateRequired()) {
+			_debug("schema update required, version " . $updater->getSchemaVersion() . " to " . SCHEMA_VERSION);
+			_debug("WARNING: please backup your database before continuing.");
+			_debug("Type 'yes' to continue.");
+
+			if (read_stdin() != 'yes')
+				exit;
+
+			for ($i = $updater->getSchemaVersion() + 1; $i <= SCHEMA_VERSION; $i++) {
+				_debug("performing update up to version $i...");
+
+				$result = $updater->performUpdateTo($i);
+
+				_debug($result ? "OK!" : "FAILED!");
+
+				if (!$result) return;
+
+			}
+		} else {
+			_debug("update not required.");
+		}
+
 	}
 
-	if (in_array("-list-plugins", $op)) {
-		$tmppluginhost = new PluginHost($link);
+	if (isset($options["list-plugins"])) {
+		$tmppluginhost = new PluginHost();
 		$tmppluginhost->load_all($tmppluginhost::KIND_ALL);
 		$enabled = array_map("trim", explode(",", PLUGINS));
 
@@ -280,9 +342,7 @@
 
 	}
 
-	$pluginhost->run_commands($op);
-
-	db_close($link);
+	PluginHost::getInstance()->run_commands($options);
 
 	if ($lock_handle != false) {
 		fclose($lock_handle);

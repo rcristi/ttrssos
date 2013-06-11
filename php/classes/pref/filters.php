@@ -3,23 +3,62 @@ class Pref_Filters extends Handler_Protected {
 
 	function csrf_ignore($method) {
 		$csrf_ignored = array("index", "getfiltertree", "edit", "newfilter", "newrule",
-			"newaction");
+			"newaction", "savefilterorder");
 
 		return array_search($method, $csrf_ignored) !== false;
 	}
+
+	function filtersortreset() {
+		$this->dbh->query("UPDATE ttrss_filters2
+				SET order_id = 0 WHERE owner_uid = " . $_SESSION["uid"]);
+		return;
+	}
+
+	function savefilterorder() {
+		$data = json_decode($_POST['payload'], true);
+
+		#file_put_contents("/tmp/saveorder.json", $_POST['payload']);
+		#$data = json_decode(file_get_contents("/tmp/saveorder.json"), true);
+
+		if (!is_array($data['items']))
+			$data['items'] = json_decode($data['items'], true);
+
+		$index = 0;
+
+		if (is_array($data) && is_array($data['items'])) {
+			foreach ($data['items'][0]['items'] as $item) {
+				$filter_id = (int) str_replace("FILTER:", "", $item['_reference']);
+
+				if ($filter_id > 0) {
+
+					$this->dbh->query("UPDATE ttrss_filters2 SET
+						order_id = $index WHERE id = '$filter_id' AND
+						owner_uid = " .$_SESSION["uid"]);
+
+					++$index;
+				}
+			}
+		}
+
+		return;
+	}
+
 
 	function testFilter() {
 		$filter = array();
 
 		$filter["enabled"] = true;
 		$filter["match_any_rule"] = sql_bool_to_bool(
-			checkbox_to_sql_bool(db_escape_string($_REQUEST["match_any_rule"])));
+			checkbox_to_sql_bool($this->dbh->escape_string($_REQUEST["match_any_rule"])));
+		$filter["inverse"] = sql_bool_to_bool(
+			checkbox_to_sql_bool($this->dbh->escape_string($_REQUEST["inverse"])));
+
 		$filter["rules"] = array();
 
-		$result = db_query($this->link, "SELECT id,name FROM ttrss_filter_types");
+		$result = $this->dbh->query("SELECT id,name FROM ttrss_filter_types");
 
 		$filter_types = array();
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 			$filter_types[$line["id"]] = $line["name"];
 		}
 
@@ -44,10 +83,8 @@ class Pref_Filters extends Handler_Protected {
 			}
 		}
 
-		$feed_title = getFeedTitle($this->link, $feed);
-
-		$qfh_ret = queryFeedHeadlines($this->link, -4, 30, "", false, false, false,
-			false, "date_entered DESC", 0, $_SESSION["uid"], $filter);
+		$qfh_ret = queryFeedHeadlines(-4, 30, "", false, false, false,
+			"date_entered DESC", 0, $_SESSION["uid"], $filter);
 
 		$result = $qfh_ret[0];
 
@@ -59,10 +96,10 @@ class Pref_Filters extends Handler_Protected {
 		print "<div class=\"filterTestHolder\">";
 		print "<table width=\"100%\" cellspacing=\"0\" id=\"prefErrorFeedList\">";
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 
 			$entry_timestamp = strtotime($line["updated"]);
-			$entry_tags = get_article_tags($this->link, $line["id"], $_SESSION["uid"]);
+			$entry_tags = get_article_tags($line["id"], $_SESSION["uid"]);
 
 			$content_preview = truncate_string(
 				strip_tags($line["content_preview"]), 100, '...');
@@ -119,7 +156,7 @@ class Pref_Filters extends Handler_Protected {
 
 		$filter_search = $_SESSION["prefs_filter_search"];
 
-		$result = db_query($this->link, "SELECT *,
+		$result = $this->dbh->query("SELECT *,
 			(SELECT action_param FROM ttrss_filters2_actions
 				WHERE filter_id = ttrss_filters2.id ORDER BY id LIMIT 1) AS action_param,
 			(SELECT action_id FROM ttrss_filters2_actions
@@ -130,16 +167,16 @@ class Pref_Filters extends Handler_Protected {
 			(SELECT reg_exp FROM ttrss_filters2_rules
 				WHERE filter_id = ttrss_filters2.id ORDER BY id LIMIT 1) AS reg_exp
 			FROM ttrss_filters2 WHERE
-			owner_uid = ".$_SESSION["uid"]." ORDER BY action_id,reg_exp");
+			owner_uid = ".$_SESSION["uid"]." ORDER BY order_id, title");
 
 
 		$action_id = -1;
 		$folder = array();
 		$folder['items'] = array();
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 
-			if ($action_id != $line["action_id"]) {
+			/* if ($action_id != $line["action_id"]) {
 				if (count($folder['items']) > 0) {
 					array_push($root['items'], $folder);
 				}
@@ -149,16 +186,16 @@ class Pref_Filters extends Handler_Protected {
 				$folder['name'] = __($line["action_name"]);
 				$folder['items'] = array();
 				$action_id = $line["action_id"];
-			}
+			} */
 
 			$name = $this->getFilterName($line["id"]);
 
 			$match_ok = false;
 			if ($filter_search) {
-				$rules_result = db_query($this->link,
+				$rules_result = $this->dbh->query(
 					"SELECT reg_exp FROM ttrss_filters2_rules WHERE filter_id = ".$line["id"]);
 
-				while ($rule_line = db_fetch_assoc($rules_result)) {
+				while ($rule_line = $this->dbh->fetch_assoc($rules_result)) {
 					if (mb_strpos($rule_line['reg_exp'], $filter_search) !== false) {
 						$match_ok = true;
 						break;
@@ -167,13 +204,13 @@ class Pref_Filters extends Handler_Protected {
 			}
 
 			if ($line['action_id'] == 7) {
-				$label_result = db_query($this->link, "SELECT fg_color, bg_color
-					FROM ttrss_labels2 WHERE caption = '".db_escape_string($line['action_param'])."' AND
+				$label_result = $this->dbh->query("SELECT fg_color, bg_color
+					FROM ttrss_labels2 WHERE caption = '".$this->dbh->escape_string($line['action_param'])."' AND
 						owner_uid = " . $_SESSION["uid"]);
 
-				if (db_num_rows($label_result) > 0) {
-					$fg_color = db_fetch_result($label_result, 0, "fg_color");
-					$bg_color = db_fetch_result($label_result, 0, "bg_color");
+				if ($this->dbh->num_rows($label_result) > 0) {
+					$fg_color = $this->dbh->fetch_result($label_result, 0, "fg_color");
+					$bg_color = $this->dbh->fetch_result($label_result, 0, "bg_color");
 
 					$name[1] = "<span class=\"labelColorIndicator\" id=\"label-editor-indicator\" style='color : $fg_color; background-color : $bg_color; margin-right : 4px'>&alpha;</span>" . $name[1];
 				}
@@ -192,9 +229,11 @@ class Pref_Filters extends Handler_Protected {
 			}
 		}
 
-		if (count($folder['items']) > 0) {
+		/* if (count($folder['items']) > 0) {
 			array_push($root['items'], $folder);
-		}
+		} */
+
+		$root['items'] = $folder['items'];
 
 		$fl = array();
 		$fl['identifier'] = 'id';
@@ -207,13 +246,15 @@ class Pref_Filters extends Handler_Protected {
 
 	function edit() {
 
-		$filter_id = db_escape_string($_REQUEST["id"]);
+		$filter_id = $this->dbh->escape_string($_REQUEST["id"]);
 
-		$result = db_query($this->link,
+		$result = $this->dbh->query(
 			"SELECT * FROM ttrss_filters2 WHERE id = '$filter_id' AND owner_uid = " . $_SESSION["uid"]);
 
-		$enabled = sql_bool_to_bool(db_fetch_result($result, 0, "enabled"));
-		$match_any_rule = sql_bool_to_bool(db_fetch_result($result, 0, "match_any_rule"));
+		$enabled = sql_bool_to_bool($this->dbh->fetch_result($result, 0, "enabled"));
+		$match_any_rule = sql_bool_to_bool($this->dbh->fetch_result($result, 0, "match_any_rule"));
+		$inverse = sql_bool_to_bool($this->dbh->fetch_result($result, 0, "inverse"));
+		$title = htmlspecialchars($this->dbh->fetch_result($result, 0, "title"));
 
 		print "<form id=\"filter_edit_form\" onsubmit='return false'>";
 
@@ -221,6 +262,12 @@ class Pref_Filters extends Handler_Protected {
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"id\" value=\"$filter_id\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"method\" value=\"editSave\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"csrf_token\" value=\"".$_SESSION['csrf_token']."\">";
+
+		print "<div class=\"dlgSec\">".__("Caption")."</div>";
+
+		print "<input required=\"true\" dojoType=\"dijit.form.ValidationTextBox\" style=\"width : 20em;\" name=\"title\" value=\"$title\">";
+
+		print "</div>";
 
 		print "<div class=\"dlgSec\">".__("Match")."</div>";
 
@@ -245,10 +292,10 @@ class Pref_Filters extends Handler_Protected {
 
 		print "<ul id='filterDlg_Matches'>";
 
-		$rules_result = db_query($this->link, "SELECT * FROM ttrss_filters2_rules
+		$rules_result = $this->dbh->query("SELECT * FROM ttrss_filters2_rules
 			WHERE filter_id = '$filter_id' ORDER BY reg_exp, id");
 
-		while ($line = db_fetch_assoc($rules_result)) {
+		while ($line = $this->dbh->fetch_assoc($rules_result)) {
 			if (sql_bool_to_bool($line["cat_filter"])) {
 				$line["feed_id"] = "CAT:" . (int)$line["cat_id"];
 			}
@@ -257,6 +304,7 @@ class Pref_Filters extends Handler_Protected {
 			unset($line["cat_id"]);
 			unset($line["filter_id"]);
 			unset($line["id"]);
+			if (!sql_bool_to_bool($line["inverse"])) unset($line["inverse"]);
 
 			$data = htmlspecialchars(json_encode($line));
 
@@ -292,10 +340,10 @@ class Pref_Filters extends Handler_Protected {
 
 		print "<ul id='filterDlg_Actions'>";
 
-		$actions_result = db_query($this->link, "SELECT * FROM ttrss_filters2_actions
+		$actions_result = $this->dbh->query("SELECT * FROM ttrss_filters2_actions
 			WHERE filter_id = '$filter_id' ORDER BY id");
 
-		while ($line = db_fetch_assoc($actions_result)) {
+		while ($line = $this->dbh->fetch_assoc($actions_result)) {
 			$line["action_param_label"] = $line["action_param"];
 
 			unset($line["filter_id"]);
@@ -330,6 +378,15 @@ class Pref_Filters extends Handler_Protected {
 		print "<br/><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" name=\"match_any_rule\" id=\"match_any_rule\" $checked>
 				<label for=\"match_any_rule\">".__('Match any rule')."</label>";
 
+		if ($inverse) {
+			$checked = "checked=\"1\"";
+		} else {
+			$checked = "";
+		}
+
+		print "<br/><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" name=\"inverse\" id=\"inverse\" $checked>
+				<label for=\"inverse\">".__('Inverse matching')."</label>";
+
 		print "<p/>";
 
 		print "<div class=\"dlgButtons\">";
@@ -358,21 +415,22 @@ class Pref_Filters extends Handler_Protected {
 
 		if (strpos($feed_id, "CAT:") === 0) {
 			$feed_id = (int) substr($feed_id, 4);
-			$feed = getCategoryTitle($this->link, $feed_id);
+			$feed = getCategoryTitle($feed_id);
 		} else {
 			$feed_id = (int) $feed_id;
 
 			if ($rule["feed_id"])
-				$feed = getFeedTitle($this->link, (int)$rule["feed_id"]);
+				$feed = getFeedTitle((int)$rule["feed_id"]);
 			else
 				$feed = __("All feeds");
 		}
 
-		$result = db_query($this->link, "SELECT description FROM ttrss_filter_types
+		$result = $this->dbh->query("SELECT description FROM ttrss_filter_types
 			WHERE id = ".(int)$rule["filter_type"]);
-		$match_on = db_fetch_result($result, 0, "description");
+		$filter_type = $this->dbh->fetch_result($result, 0, "description");
 
-		return T_sprintf("%s on %s in %s", $rule["reg_exp"], $match_on, $feed);
+		return T_sprintf("%s on %s in %s %s", strip_tags($rule["reg_exp"]),
+			$filter_type, $feed, isset($rule["inverse"]) ? __("(inverse)") : "");
 	}
 
 	function printRuleName() {
@@ -380,10 +438,10 @@ class Pref_Filters extends Handler_Protected {
 	}
 
 	private function getActionName($action) {
-		$result = db_query($this->link, "SELECT description FROM
+		$result = $this->dbh->query("SELECT description FROM
 			ttrss_filter_actions WHERE id = " .(int)$action["action_id"]);
 
-		$title = __(db_fetch_result($result, 0, "description"));
+		$title = __($this->dbh->fetch_result($result, 0, "description"));
 
 		if ($action["action_id"] == 4 || $action["action_id"] == 6 ||
 			$action["action_id"] == 7)
@@ -403,12 +461,16 @@ class Pref_Filters extends Handler_Protected {
 
 #		print_r($_REQUEST);
 
-		$filter_id = db_escape_string($_REQUEST["id"]);
-		$enabled = checkbox_to_sql_bool(db_escape_string($_REQUEST["enabled"]));
-		$match_any_rule = checkbox_to_sql_bool(db_escape_string($_REQUEST["match_any_rule"]));
+		$filter_id = $this->dbh->escape_string($_REQUEST["id"]);
+		$enabled = checkbox_to_sql_bool($this->dbh->escape_string($_REQUEST["enabled"]));
+		$match_any_rule = checkbox_to_sql_bool($this->dbh->escape_string($_REQUEST["match_any_rule"]));
+		$inverse = checkbox_to_sql_bool($this->dbh->escape_string($_REQUEST["inverse"]));
+		$title = $this->dbh->escape_string($_REQUEST["title"]);
 
-		$result = db_query($this->link, "UPDATE ttrss_filters2 SET enabled = $enabled,
-		  	match_any_rule = $match_any_rule
+		$result = $this->dbh->query("UPDATE ttrss_filters2 SET enabled = $enabled,
+			match_any_rule = $match_any_rule,
+			inverse = $inverse,
+			title = '$title'
 			WHERE id = '$filter_id'
 			AND owner_uid = ". $_SESSION["uid"]);
 
@@ -418,17 +480,17 @@ class Pref_Filters extends Handler_Protected {
 
 	function remove() {
 
-		$ids = split(",", db_escape_string($_REQUEST["ids"]));
+		$ids = explode(",", $this->dbh->escape_string($_REQUEST["ids"]));
 
 		foreach ($ids as $id) {
-			db_query($this->link, "DELETE FROM ttrss_filters2 WHERE id = '$id' AND owner_uid = ". $_SESSION["uid"]);
+			$this->dbh->query("DELETE FROM ttrss_filters2 WHERE id = '$id' AND owner_uid = ". $_SESSION["uid"]);
 		}
 	}
 
 	private function saveRulesAndActions($filter_id) {
 
-		db_query($this->link, "DELETE FROM ttrss_filters2_rules WHERE filter_id = '$filter_id'");
-		db_query($this->link, "DELETE FROM ttrss_filters2_actions WHERE filter_id = '$filter_id'");
+		$this->dbh->query("DELETE FROM ttrss_filters2_rules WHERE filter_id = '$filter_id'");
+		$this->dbh->query("DELETE FROM ttrss_filters2_actions WHERE filter_id = '$filter_id'");
 
 		if ($filter_id) {
 			/* create rules */
@@ -457,9 +519,11 @@ class Pref_Filters extends Handler_Protected {
 			foreach ($rules as $rule) {
 				if ($rule) {
 
-					$reg_exp = strip_tags(db_escape_string(trim($rule["reg_exp"])));
-					$filter_type = (int) db_escape_string(trim($rule["filter_type"]));
-					$feed_id = db_escape_string(trim($rule["feed_id"]));
+					$reg_exp = strip_tags($this->dbh->escape_string(trim($rule["reg_exp"])));
+					$inverse = isset($rule["inverse"]) ? "true" : "false";
+
+					$filter_type = (int) $this->dbh->escape_string(trim($rule["filter_type"]));
+					$feed_id = $this->dbh->escape_string(trim($rule["feed_id"]));
 
 					if (strpos($feed_id, "CAT:") === 0) {
 
@@ -477,19 +541,19 @@ class Pref_Filters extends Handler_Protected {
 					}
 
 					$query = "INSERT INTO ttrss_filters2_rules
-						(filter_id, reg_exp,filter_type,feed_id,cat_id,cat_filter) VALUES
-						('$filter_id', '$reg_exp', '$filter_type', $feed_id, $cat_id, $cat_filter)";
+						(filter_id, reg_exp,filter_type,feed_id,cat_id,cat_filter,inverse) VALUES
+						('$filter_id', '$reg_exp', '$filter_type', $feed_id, $cat_id, $cat_filter, $inverse)";
 
-					db_query($this->link, $query);
+					$this->dbh->query($query);
 				}
 			}
 
 			foreach ($actions as $action) {
 				if ($action) {
 
-					$action_id = (int) db_escape_string($action["action_id"]);
-					$action_param = db_escape_string($action["action_param"]);
-					$action_param_label = db_escape_string($action["action_param_label"]);
+					$action_id = (int) $this->dbh->escape_string($action["action_id"]);
+					$action_param = $this->dbh->escape_string($action["action_param"]);
+					$action_param_label = $this->dbh->escape_string($action["action_param_label"]);
 
 					if ($action_id == 7) {
 						$action_param = $action_param_label;
@@ -503,7 +567,7 @@ class Pref_Filters extends Handler_Protected {
 						(filter_id, action_id, action_param) VALUES
 						('$filter_id', '$action_id', '$action_param')";
 
-					db_query($this->link, $query);
+					$this->dbh->query($query);
 				}
 			}
 		}
@@ -520,34 +584,35 @@ class Pref_Filters extends Handler_Protected {
 
 		$enabled = checkbox_to_sql_bool($_REQUEST["enabled"]);
 		$match_any_rule = checkbox_to_sql_bool($_REQUEST["match_any_rule"]);
+		$title = $this->dbh->escape_string($_REQUEST["title"]);
 
-		db_query($this->link, "BEGIN");
+		$this->dbh->query("BEGIN");
 
 		/* create base filter */
 
-		$result = db_query($this->link, "INSERT INTO ttrss_filters2
-			(owner_uid, match_any_rule, enabled) VALUES
-			(".$_SESSION["uid"].",$match_any_rule,$enabled)");
+		$result = $this->dbh->query("INSERT INTO ttrss_filters2
+			(owner_uid, match_any_rule, enabled, title) VALUES
+			(".$_SESSION["uid"].",$match_any_rule,$enabled, '$title')");
 
-		$result = db_query($this->link, "SELECT MAX(id) AS id FROM ttrss_filters2
+		$result = $this->dbh->query("SELECT MAX(id) AS id FROM ttrss_filters2
 			WHERE owner_uid = ".$_SESSION["uid"]);
 
-		$filter_id = db_fetch_result($result, 0, "id");
+		$filter_id = $this->dbh->fetch_result($result, 0, "id");
 
 		$this->saveRulesAndActions($filter_id);
 
-		db_query($this->link, "COMMIT");
+		$this->dbh->query("COMMIT");
 	}
 
 	function index() {
 
-		$sort = db_escape_string($_REQUEST["sort"]);
+		$sort = $this->dbh->escape_string($_REQUEST["sort"]);
 
 		if (!$sort || $sort == "undefined") {
 			$sort = "reg_exp";
 		}
 
-		$filter_search = db_escape_string($_REQUEST["search"]);
+		$filter_search = $this->dbh->escape_string($_REQUEST["search"]);
 
 		if (array_key_exists("search", $_REQUEST)) {
 			$_SESSION["prefs_filter_search"] = $filter_search;
@@ -559,7 +624,7 @@ class Pref_Filters extends Handler_Protected {
 		print "<div id=\"pref-filter-header\" dojoType=\"dijit.layout.ContentPane\" region=\"top\">";
 		print "<div id=\"pref-filter-toolbar\" dojoType=\"dijit.Toolbar\">";
 
-		$filter_search = db_escape_string($_REQUEST["search"]);
+		$filter_search = $this->dbh->escape_string($_REQUEST["search"]);
 
 		if (array_key_exists("search", $_REQUEST)) {
 			$_SESSION["prefs_filter_search"] = $filter_search;
@@ -592,6 +657,10 @@ class Pref_Filters extends Handler_Protected {
 		print "<button dojoType=\"dijit.form.Button\" onclick=\"return editSelectedFilter()\">".
 			__('Edit')."</button> ";
 
+		print "<button dojoType=\"dijit.form.Button\" onclick=\"return resetFilterOrder()\">".
+			__('Reset sort order')."</button> ";
+
+
 		print "<button dojoType=\"dijit.form.Button\" onclick=\"return removeSelectedFilters()\">".
 			__('Remove')."</button> ";
 
@@ -608,14 +677,16 @@ class Pref_Filters extends Handler_Protected {
 		<img src='images/indicator_tiny.gif'>".
 		 __("Loading, please wait...")."</div>";
 
-		print "<div dojoType=\"dojo.data.ItemFileWriteStore\" jsId=\"filterStore\"
+		print "<div dojoType=\"fox.PrefFilterStore\" jsId=\"filterStore\"
 			url=\"backend.php?op=pref-filters&method=getfiltertree\">
 		</div>
 		<div dojoType=\"lib.CheckBoxStoreModel\" jsId=\"filterModel\" store=\"filterStore\"
-		query=\"{id:'root'}\" rootId=\"root\" rootLabel=\"Feeds\"
+			query=\"{id:'root'}\" rootId=\"root\" rootLabel=\"Filters\"
 			childrenAttrs=\"items\" checkboxStrict=\"false\" checkboxAll=\"false\">
 		</div>
 		<div dojoType=\"fox.PrefFilterTree\" id=\"filterTree\"
+			dndController=\"dijit.tree.dndSource\"
+			betweenThreshold=\"5\"
 			model=\"filterModel\" openOnClick=\"true\">
 		<script type=\"dojo/method\" event=\"onLoad\" args=\"item\">
 			Element.hide(\"filterlistLoading\");
@@ -633,8 +704,7 @@ class Pref_Filters extends Handler_Protected {
 
 		print "</div>"; #pane
 
-		global $pluginhost;
-		$pluginhost->run_hooks($pluginhost::HOOK_PREFS_TAB,
+		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_PREFS_TAB,
 			"hook_prefs_tab", "prefFilters");
 
 		print "</div>"; #container
@@ -648,6 +718,10 @@ class Pref_Filters extends Handler_Protected {
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"op\" value=\"pref-filters\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"method\" value=\"add\">";
 		print "<input dojoType=\"dijit.form.TextBox\" style=\"display : none\" name=\"csrf_token\" value=\"".$_SESSION['csrf_token']."\">";
+
+		print "<div class=\"dlgSec\">".__("Caption")."</div>";
+
+		print "<input required=\"true\" dojoType=\"dijit.form.ValidationTextBox\" style=\"width : 20em;\" name=\"title\" value=\"\">";
 
 		print "<div class=\"dlgSec\">".__("Match")."</div>";
 
@@ -710,10 +784,8 @@ class Pref_Filters extends Handler_Protected {
 		print "<br/><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" name=\"match_any_rule\" id=\"match_any_rule\">
 				<label for=\"match_any_rule\">".__('Match any rule')."</label>";
 
-		print "<p/>";
-
-/*		print "<input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" name=\"inverse\" id=\"inverse\">
-	<label for=\"inverse\">".__('Inverse match')."</label><hr/>"; */
+		print "<br/><input dojoType=\"dijit.form.CheckBox\" type=\"checkbox\" name=\"inverse\" id=\"inverse\">
+				<label for=\"inverse\">".__('Inverse matching')."</label>";
 
 //		print "</div>";
 
@@ -739,10 +811,12 @@ class Pref_Filters extends Handler_Protected {
 			$reg_exp = htmlspecialchars($rule["reg_exp"]);
 			$filter_type = $rule["filter_type"];
 			$feed_id = $rule["feed_id"];
+			$inverse_checked = isset($rule["inverse"]) ? "checked" : "";
 		} else {
 			$reg_exp = "";
 			$filter_type = 1;
 			$feed_id = 0;
+			$inverse_checked = "";
 		}
 
 		if (strpos($feed_id, "CAT:") === 0) {
@@ -755,12 +829,12 @@ class Pref_Filters extends Handler_Protected {
 
 		print "<form name='filter_new_rule_form' id='filter_new_rule_form'>";
 
-		$result = db_query($this->link, "SELECT id,description
+		$result = $this->dbh->query("SELECT id,description
 			FROM ttrss_filter_types WHERE id != 5 ORDER BY description");
 
 		$filter_types = array();
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 			$filter_types[$line["id"]] = __($line["description"]);
 		}
 
@@ -773,6 +847,11 @@ class Pref_Filters extends Handler_Protected {
 			 style=\"font-size : 16px; width : 20em;\"
 			 name=\"reg_exp\" value=\"$reg_exp\"/>";
 
+		print "<hr/>";
+		print "<input id=\"filterDlg_inverse\" dojoType=\"dijit.form.CheckBox\"
+			 name=\"inverse\" $inverse_checked/>";
+		print "<label for=\"filterDlg_inverse\">".__("Inverse regular expression matching")."</label>";
+
 		print "<hr/>" .  __("on field") . " ";
 		print_select_hash("filter_type", $filter_type, $filter_types,
 			'dojoType="dijit.form.Select"');
@@ -782,7 +861,7 @@ class Pref_Filters extends Handler_Protected {
 		print __("in") . " ";
 
 		print "<span id='filterDlg_feeds'>";
-		print_feed_select($this->link, "feed_id",
+		print_feed_select("feed_id",
 			$cat_filter ? "CAT:$feed_id" : $feed_id,
 			'dojoType="dijit.form.FilteringSelect"');
 		print "</span>";
@@ -806,7 +885,7 @@ class Pref_Filters extends Handler_Protected {
 		$action = json_decode($_REQUEST["action"], true);
 
 		if ($action) {
-			$action_param = db_escape_string($action["action_param"]);
+			$action_param = $this->dbh->escape_string($action["action_param"]);
 			$action_id = (int)$action["action_id"];
 		} else {
 			$action_param = "";
@@ -822,10 +901,10 @@ class Pref_Filters extends Handler_Protected {
 		print "<select name=\"action_id\" dojoType=\"dijit.form.Select\"
 			onchange=\"filterDlgCheckAction(this)\">";
 
-		$result = db_query($this->link, "SELECT id,description FROM ttrss_filter_actions
+		$result = $this->dbh->query("SELECT id,description FROM ttrss_filter_actions
 			ORDER BY name");
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 			$is_selected = ($line["id"] == $action_id) ? "selected='1'" : "";
 			printf("<option $is_selected value='%d'>%s</option>", $line["id"], __($line["description"]));
 		}
@@ -846,7 +925,7 @@ class Pref_Filters extends Handler_Protected {
 			id=\"filterDlg_actionParam\" style=\"$param_hidden\"
 			name=\"action_param\" value=\"$action_param\">";
 
-		print_label_select($this->link, "action_param_label", $action_param,
+		print_label_select("action_param_label", $action_param,
 			"id=\"filterDlg_actionParamLabel\" style=\"$label_param_hidden\"
 			dojoType=\"dijit.form.Select\"");
 
@@ -870,66 +949,57 @@ class Pref_Filters extends Handler_Protected {
 	}
 
 	private function getFilterName($id) {
-		$result = db_query($this->link,
-			"SELECT * FROM ttrss_filters2_rules WHERE filter_id = '$id' ORDER BY id
-			LIMIT 3");
 
-		$titles = array();
-		$count = 0;
+		$result = $this->dbh->query(
+			"SELECT title,COUNT(DISTINCT r.id) AS num_rules,COUNT(DISTINCT a.id) AS num_actions
+				FROM ttrss_filters2 AS f LEFT JOIN ttrss_filters2_rules AS r
+					ON (r.filter_id = f.id)
+						LEFT JOIN ttrss_filters2_actions AS a
+							ON (a.filter_id = f.id) WHERE f.id = '$id' GROUP BY f.title");
 
-		while ($line = db_fetch_assoc($result)) {
+		$title = $this->dbh->fetch_result($result, 0, "title");
+		$num_rules = $this->dbh->fetch_result($result, 0, "num_rules");
+		$num_actions = $this->dbh->fetch_result($result, 0, "num_actions");
 
-			if (sql_bool_to_bool($line["cat_filter"])) {
-				unset($line["cat_filter"]);
-				$line["feed_id"] = "CAT:" . (int)$line["cat_id"];
-				unset($line["cat_id"]);
-			}
+		if (!$title) $title = __("[No caption]");
 
-			if ($count < 2) {
-				array_push($titles, $this->getRuleName($line));
-			} else {
-				array_push($titles, "...");
-				break;
-			}
-			++$count;
+		$title = sprintf(_ngettext("%s (%d rule)", "%s (%d rules)", $num_rules), $title, $num_rules);
+
+		$result = $this->dbh->query(
+			"SELECT * FROM ttrss_filters2_actions WHERE filter_id = '$id' ORDER BY id LIMIT 1");
+
+		$actions = "";
+
+		if ($this->dbh->num_rows($result) > 0) {
+			$line = $this->dbh->fetch_assoc($result);
+			$actions = $this->getActionName($line);
+
+			$num_actions -= 1;
 		}
 
-		$result = db_query($this->link,
-			"SELECT * FROM ttrss_filters2_actions WHERE filter_id = '$id' ORDER BY id LIMIT 3");
+		if ($num_actions > 0)
+			$actions = sprintf(_ngettext("%s (+%d action)", "%s (+%d actions)", $num_actions), $actions, $num_actions);
 
-		$actions = array();
-		$count = 0;
-
-		while ($line = db_fetch_assoc($result)) {
-			if ($count < 2) {
-				array_push($actions, $this->getActionName($line));
-			} else {
-				array_push($actions, "...");
-				break;
-			}
-			++$count;
-		}
-
-		return array(join(", ", $titles), join(", ", $actions));
+		return array($title, $actions);
 	}
 
 	function join() {
-		$ids = explode(",", db_escape_string($_REQUEST["ids"]));
+		$ids = explode(",", $this->dbh->escape_string($_REQUEST["ids"]));
 
 		if (count($ids) > 1) {
 			$base_id = array_shift($ids);
 			$ids_str = join(",", $ids);
 
-			db_query($this->link, "BEGIN");
-			db_query($this->link, "UPDATE ttrss_filters2_rules
+			$this->dbh->query("BEGIN");
+			$this->dbh->query("UPDATE ttrss_filters2_rules
 				SET filter_id = '$base_id' WHERE filter_id IN ($ids_str)");
-			db_query($this->link, "UPDATE ttrss_filters2_actions
+			$this->dbh->query("UPDATE ttrss_filters2_actions
 				SET filter_id = '$base_id' WHERE filter_id IN ($ids_str)");
 
-			db_query($this->link, "DELETE FROM ttrss_filters2 WHERE id IN ($ids_str)");
-			db_query($this->link, "UPDATE ttrss_filters2 SET match_any_rule = true WHERE id = '$base_id'");
+			$this->dbh->query("DELETE FROM ttrss_filters2 WHERE id IN ($ids_str)");
+			$this->dbh->query("UPDATE ttrss_filters2 SET match_any_rule = true WHERE id = '$base_id'");
 
-			db_query($this->link, "COMMIT");
+			$this->dbh->query("COMMIT");
 
 			$this->optimizeFilter($base_id);
 
@@ -937,14 +1007,14 @@ class Pref_Filters extends Handler_Protected {
 	}
 
 	private function optimizeFilter($id) {
-		db_query($this->link, "BEGIN");
-		$result = db_query($this->link, "SELECT * FROM ttrss_filters2_actions
+		$this->dbh->query("BEGIN");
+		$result = $this->dbh->query("SELECT * FROM ttrss_filters2_actions
 			WHERE filter_id = '$id'");
 
 		$tmp = array();
 		$dupe_ids = array();
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 			$id = $line["id"];
 			unset($line["id"]);
 
@@ -957,17 +1027,17 @@ class Pref_Filters extends Handler_Protected {
 
 		if (count($dupe_ids) > 0) {
 			$ids_str = join(",", $dupe_ids);
-			db_query($this->link, "DELETE FROM ttrss_filters2_actions
+			$this->dbh->query("DELETE FROM ttrss_filters2_actions
 				WHERE id IN ($ids_str)");
 		}
 
-		$result = db_query($this->link, "SELECT * FROM ttrss_filters2_rules
+		$result = $this->dbh->query("SELECT * FROM ttrss_filters2_rules
 			WHERE filter_id = '$id'");
 
 		$tmp = array();
 		$dupe_ids = array();
 
-		while ($line = db_fetch_assoc($result)) {
+		while ($line = $this->dbh->fetch_assoc($result)) {
 			$id = $line["id"];
 			unset($line["id"]);
 
@@ -980,11 +1050,11 @@ class Pref_Filters extends Handler_Protected {
 
 		if (count($dupe_ids) > 0) {
 			$ids_str = join(",", $dupe_ids);
-			db_query($this->link, "DELETE FROM ttrss_filters2_rules
+			$this->dbh->query("DELETE FROM ttrss_filters2_rules
 				WHERE id IN ($ids_str)");
 		}
 
-		db_query($this->link, "COMMIT");
+		$this->dbh->query("COMMIT");
 	}
 }
 ?>

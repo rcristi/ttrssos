@@ -1,7 +1,5 @@
 <?php
 class NSFW extends Plugin {
-
-	private $link;
 	private $host;
 
 	function about() {
@@ -12,7 +10,6 @@ class NSFW extends Plugin {
 	}
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_RENDER_ARTICLE, $this);
@@ -99,6 +96,10 @@ class NSFW extends Plugin {
 		$this->host->set($this, "tags", $tags);
 
 		echo __("Configuration saved.");
+	}
+
+	function api_version() {
+		return 2;
 	}
 
 }

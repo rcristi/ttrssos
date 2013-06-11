@@ -22,6 +22,9 @@ div.cdmHeader > span {
 div.cdmHeader span.updated {
 	color : gray;
 	font-weight : normal;
+	font-size : 11px;
+	white-space : nowrap;
+	vertical-align : middle;
 }
 
 div.cdmHeader input {
@@ -42,10 +45,6 @@ div.cdmHeader img, div.cdmFooter img {
 	margin : 0px 2px 0px 2px;
 }
 
-div.cdmContent, div.cdmContentInner * {
-	font-weight : normal;
-}
-
 div.cdmContent a {
 	color : #4684ff;
 }
@@ -55,24 +54,95 @@ div.cdmContent a:hover {
 }
 
 div.cdmContentInner {
-	margin : 0px 10px 10px 10px;
+	margin : 10px;
+	line-height : 20px;
 }
 
 div.cdmContentInner img {
 	border-width : 0px;
 	max-width : 98%;
+	height : auto;
 }
 
 div.cdmFooter {
-	background : #f9f9f9;
 	padding : 5px;
 	font-weight : normal;
 	color : gray;
 	clear : both;
 }
 
-.Selected div.cdmFooter {
-	background-color : #FFF2BF;
+div.cdm.expanded {
+	margin-top : 4px;
+	margin-bottom : 4px;
+}
+
+div.cdm.expandable {
+	background-color : #f0f0f0;
+	border-width : 0px 0px 1px 0px;
+	border-color : #c0c0c0;
+	border-style : solid;
+}
+
+div.cdm.expandable > hr {
+	display : none;
+}
+
+div.cdm.expanded > hr {
+	margin-top : 0px;
+	margin-bottom : 0px;
+}
+
+div.cdm.Unread {
+	background : white;
+}
+
+div.cdm.active {
+	border-color : #88b0f0;
+	background : white ! important;
+}
+
+div.cdm.expandable div.cdmHeader a.title {
+	font-weight : bold;
+	color : gray;
+}
+
+div.cdm.expandable.Unread div.cdmHeader a.title {
+	color : black;
+}
+
+div.cdm.expandable.active div.cdmHeader a.title {
+	color : #4684ff;
+}
+
+div.cdm.expanded div.cdmHeader {
+	background : transparent ! important;
+}
+
+div.cdm.expanded div.cdmHeader a.title {
+	font-size : 14px;
+	color : gray;
+	font-weight : bold;
+}
+
+
+div.cdm.expanded.active div.cdmHeader a.title {
+	color : #4684ff;
+}
+
+div.cdm.expanded.Unread div.cdmHeader a.title {
+	color : black;
+}
+
+div.cdm.expanded div.cdmContent {
+	color : gray;
+}
+
+div.cdm.expanded.Unread div.cdmContent {
+	color : black;
+}
+
+div.cdm.active div.cdmContent {
+	color : black;
 }
 
 span.cdmExcerpt {
@@ -96,11 +166,52 @@ div.cdmFeedTitle {
 	background-repeat : repeat-x;
 }
 
-div.articleNote {
-	border-style : dashed none dashed none;
+div.cdmFeedTitle a.title {
+	color : gray;
+	font-style : italic;
+	font-weight : bold;
+}
+
+div.cdmFeedTitle a {
+	color : gray;
+}
+
+div.cdmFeedTitle a:hover {
+	color : #4684ff;
 }
 
 div.cdmHeader span.hlFeed {
 	float : right;
 	font-weight : normal;
+	font-style : italic;
 }
+
+div.cdmHeader div.hlFeed, div.cdmHeader div.hlFeed a {
+	vertical-align : middle;
+	color : gray;
+	font-weight : normal;
+	font-style : italic;
+	font-size : 11px;
+}
+
+div.cdm .hlFeed a {
+	border-radius : 4px;
+	display : inline-block;
+	padding : 1px 4px 1px 4px;
+}
+
+div.cdmContentInner p {
+	max-width : 650px;
+}
+
+div.cdmContentInner iframe {
+	min-width : 50%;
+}
+
+div.cdmHeader span.author {
+	color : gray;
+	font-size : 11px;
+	font-weight : normal;
+}
+
+

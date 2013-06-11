@@ -5,12 +5,16 @@ class PluginHandler extends Handler_Protected {
 	}
 
 	function catchall($method) {
-		global $pluginhost;
+		$plugin = PluginHost::getInstance()->get_plugin($_REQUEST["plugin"]);
 
-		$plugin = $pluginhost->get_plugin($_REQUEST["plugin"]);
-
-		if (method_exists($plugin, $method)) {
-			$plugin->$method();
+		if ($plugin) {
+			if (method_exists($plugin, $method)) {
+				$plugin->$method();
+			} else {
+				print json_encode(array("error" => "METHOD_NOT_FOUND"));
+			}
+		} else {
+			print json_encode(array("error" => "PLUGIN_NOT_FOUND"));
 		}
 	}
 }

@@ -1,8 +1,27 @@
 <?php
-	// WARNING: Don't ask for help on tt-rss.org forums or the bugtracker if you have
-	// modified this file.
+	/*
+	 * WARNING!
+	 *
+	 * If you modify this file, you are ON YOUR OWN!
+	 *
+	 * Believe it or not, all of the checks below are required to succeed for
+	 * tt-rss to actually function properly.
+	 *
+	 * If you think you have a better idea about what is or isn't required, feel
+	 * free to modify the file, note though that you are therefore automatically
+	 * disqualified from any further support by official channels, e.g. tt-rss.org
+	 * issue tracker or the forums.
+	 *
+	 * If you come crying when stuff inevitably breaks, you will be mocked and told
+	 * to get out. */
 
-	function initial_sanity_check($link) {
+	function make_self_url_path() {
+		$url_path = ($_SERVER['HTTPS'] != "on" ? 'http://' :  'https://') . $_SERVER["HTTP_HOST"] . parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH);
+
+		return $url_path;
+	}
+
+	function initial_sanity_check() {
 
 		$errors = array();
 
@@ -12,6 +31,10 @@
 
 			require_once "sanity_config.php";
 
+			if (file_exists("install") && !file_exists("config.php")) {
+				array_push($errors, "Please copy config.php-dist to config.php or run the installer in install/");
+			}
+
 			if (strpos(PLUGINS, "auth_") === FALSE) {
 				array_push($errors, "Please enable at least one authentication module via PLUGINS constant in config.php");
 			}
@@ -20,7 +43,7 @@
 				array_push($errors, "Please don't run this script as root.");
 			}
 
-			if (version_compare("5.3.0", phpversion()) == 1) {
+			if (version_compare(PHP_VERSION, '5.3.0', '<')) {
 				array_push($errors, "PHP version 5.3.0 or newer required.");
 			}
 
@@ -32,8 +55,24 @@
 				array_push($errors, "Image cache is not writable (chmod -R 777 ".CACHE_DIR."/images)");
 			}
 
+			if (!is_writable(CACHE_DIR . "/upload")) {
+				array_push($errors, "Upload cache is not writable (chmod -R 777 ".CACHE_DIR."/upload)");
+			}
+
 			if (!is_writable(CACHE_DIR . "/export")) {
 				array_push($errors, "Data export cache is not writable (chmod -R 777 ".CACHE_DIR."/export)");
+			}
+
+			if (!is_writable(CACHE_DIR . "/js")) {
+				array_push($errors, "Javascript cache is not writable (chmod -R 777 ".CACHE_DIR."/js)");
+			}
+
+			if (strlen(FEED_CRYPT_KEY) > 0 && strlen(FEED_CRYPT_KEY) != 24) {
+				array_push($errors, "FEED_CRYPT_KEY should be exactly 24 characters in length.");
+			}
+
+			if (strlen(FEED_CRYPT_KEY) > 0 && !function_exists("mcrypt_decrypt")) {
+				array_push($errors, "FEED_CRYPT_KEY requires mcrypt functions which are not found.");
 			}
 
 			if (GENERATED_CONFIG_CHECK != EXPECTED_CONFIG_VERSION) {
@@ -48,33 +87,19 @@
 				}
 			}
 
-			if (SESSION_EXPIRE_TIME < 60) {
-				array_push($errors, "SESSION_EXPIRE_TIME set in config.php is too low, please set it to an integer value >= 60");
-			}
-
-			if (SESSION_EXPIRE_TIME < SESSION_COOKIE_LIFETIME) {
-				array_push($errors, "SESSION_EXPIRE_TIME set in config.php should be >= to SESSION_COOKIE_LIFETIME");
-			}
-
 			if (SINGLE_USER_MODE) {
-				$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+				$result = db_query("SELECT id FROM ttrss_users WHERE id = 1");
 
-				if ($link) {
-					$result = db_query($link, "SELECT id FROM ttrss_users WHERE id = 1");
-
-					if (db_num_rows($result) != 1) {
-						array_push($errors, "SINGLE_USER_MODE is enabled in config.php but default admin account is not found.");
-					}
+				if (db_num_rows($result) != 1) {
+					array_push($errors, "SINGLE_USER_MODE is enabled in config.php but default admin account is not found.");
 				}
 			}
 
 			if (SELF_URL_PATH == "http://yourserver/tt-rss/") {
-				if ($_SERVER['HTTP_REFERER']) {
-					array_push($errors,
-						"Please set SELF_URL_PATH to the correct value for your server (possible value: <b>" . $_SERVER['HTTP_REFERER'] . "</b>)");
-				} else {
-					array_push($errors, "Please set SELF_URL_PATH to the correct value for your server.");
-				}
+				$urlpath = preg_replace("/\w+\.php$/", "", make_self_url_path());
+
+				array_push($errors,
+						"Please set SELF_URL_PATH to the correct value for your server (possible value: <b>$urlpath</b>)");
 			}
 
 			if (!is_writable(ICONS_DIR)) {
@@ -85,10 +110,6 @@
 				array_push($errors, "LOCK_DIRECTORY defined in config.php is not writable (chmod -R 777 ".LOCK_DIRECTORY.").\n");
 			}
 
-			if (ini_get("open_basedir")) {
-				array_push($errors, "PHP configuration option open_basedir is not supported. Please disable this in PHP settings file (php.ini).");
-			}
-
 			if (!function_exists("curl_init") && !ini_get("allow_url_fopen")) {
 				array_push($errors, "PHP configuration option allow_url_fopen is disabled, and CURL functions are not present. Either enable allow_url_fopen or install PHP extension for CURL.");
 			}
@@ -97,7 +118,7 @@
 				array_push($errors, "PHP support for JSON is required, but was not found.");
 			}
 
-			if (DB_TYPE == "mysql" && !function_exists("mysql_connect")) {
+			if (DB_TYPE == "mysql" && !function_exists("mysql_connect") && !function_exists("mysqli_connect")) {
 				array_push($errors, "PHP support for MySQL is required for configured DB_TYPE in config.php.");
 			}
 
@@ -117,9 +138,13 @@
 				array_push($errors, "PHP support for ctype functions are required by HTMLPurifier.");
 			}
 
-			if (ini_get("safe_mode")) {
-				array_push($errors, "PHP safe mode setting is not supported.");
+			if (!function_exists("iconv")) {
+				array_push($errors, "PHP support for iconv is required to handle multiple charsets.");
 			}
+
+			/* if (ini_get("safe_mode")) {
+				array_push($errors, "PHP safe mode setting is not supported.");
+			} */
 
 			if ((PUBSUBHUBBUB_HUB || PUBSUBHUBBUB_ENABLED) && !function_exists("curl_init")) {
 				array_push($errors, "PHP support for CURL is required for PubSubHubbub.");
@@ -138,7 +163,8 @@
 				<link rel="stylesheet" type="text/css" href="utility.css">
 			</head>
 		<body>
-		<div class="floatingLogo"><img src="images/logo_wide.png"></div>
+		<div class="floatingLogo"><img src="images/logo_small.png"></div>
+			<div class="content">
 
 			<h1>Startup failed</h1>
 
@@ -150,6 +176,8 @@
 			<p>You might want to check tt-rss <a href="http://tt-rss.org/wiki">wiki</a> or the
 				<a href="http://tt-rss.org/forum">forums</a> for more information. Please search the forums before creating new topic
 				for your question.</p>
+
+		</div>
 		</body>
 		</html>
 
@@ -170,6 +198,6 @@
 		}
 	}
 
-	initial_sanity_check($link);
+	initial_sanity_check();
 
 ?>

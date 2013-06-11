@@ -1,8 +1,22 @@
 body {
-	margin : 2em;
-	padding : 0em;
 	font-family : sans-serif;
 	font-size : 12px;
+	background : #eee;
+	margin-left : auto;
+	margin-right : auto;
+	max-width : 800px;
+}
+
+form {
+	margin : 10px 0px 0px 0px;
+	padding : 0px;
+}
+
+div.content {
+	background : white;
+	border : 1px solid #ccc;
+	padding : 10px;
+	box-shadow : 0px 0px 3px #ccc;
 }
 
 p.warning {
@@ -24,6 +38,8 @@ div.insensitive-small {
 
 .floatingLogo {
 	float : right;
+	position : relative;
+	top : -10px;
 }
 
 a {
@@ -35,52 +51,66 @@ a:hover {
 	color : black;
 }
 
+div.notice, div.warning, div.error {
+	padding : 4px 10px 4px 4px;
+	display : inline-block;
+	margin : 2px 0px 4px 0px;
+	font-size : 12px;
+	border-style : solid;
+	border-color : #ccc;
+	border-radius : 4px;
+	border-width : 1px;
+	box-shadow : 0px 0px 2px rgba(0,0,0,0.1);
+}
+
+div.notice div.inner, div.warning div.inner, div.error div.inner {
+	vertical-align : middle;
+}
+
 div.notice {
-	background : #ffffff;
-	border : 1px solid #88b0f0;
-	width : 50%;
-	padding : 5px;
-	margin : 0px 0px 5px 0px;
-	font-size : 9pt;
+	background : #ecf4ff;
+	border-color : #88b0f0;
 }
 
 div.warning {
+	border-color : #EFDC88;
 	background : #fff7d5;
-	border : 1px solid #d7c47a;
-	font-size : 9pt;
-	width : 50%;
-	padding : 5px;
-	margin : 0px 0px 5px 0px;
-}
-
-
-div.warning img, div.notice img, div.error img {
-	vertical-align : middle;
-	padding : 5px;
 }
 
 div.error {
-	border : 1px solid #ff0000;
 	background : #ffcccc;
-	padding : 5px;
-	margin : 0px 0px 5px 0px;
-	font-size : 9pt;
+	border-color : #ff0000;
+}
+
+div.warning img, div.notice img, div.error img {
+	margin-right : 4px;
+	vertical-align : middle;
+}
+
+div.warning span, div.notice span, div.error span {
+	display : table-cell;
+	vertical-align : middle;
+
 }
 
 h1 {
 	color : #88b0f0;
-	font-size : 16pt;
-/*	border-width : 0px 0px 1px 0px;
-	border-color : black;
-	border-style : solid; */
+	font-size : 32px;
+	font-family : serif;
+	margin : 20px 0px 5px 0px;
+	text-shadow : 2px 2px 2px #fff;
 }
 
 h2 {
 	color : #88b0f0;
 	font-size : 14pt;
-/*	border-width : 0px 0px 1px 0px;
-	border-color : black;
-	border-style : solid; */
+	border-width : 0px 0px 1px 0px;
+	border-color : #f0f0f0;
+	border-style : solid; 
+}
+
+div.content > h2 {
+	margin-top : 0px;
 }
 
 div.rss h1 {
@@ -93,7 +123,6 @@ div.rss h1 {
 
 div.rss h2 {
 	font-size : 12pt;
-	margin : 0px;
 }
 
 div.rss a.extlink {
@@ -102,6 +131,10 @@ div.rss a.extlink {
 	border-color : #778899;
 	border-style : dotted;
 	font-size : 9pt;
+}
+
+div.rss img {
+	max-width : 775px;
 }
 
 div.rss p.description {
@@ -182,3 +215,49 @@ div.autocomplete ul li {
 	cursor : pointer;
 }
 
+fieldset { 
+	border-width : 0px;
+	padding : 0px 0px 5px 0px;
+	margin : 0px;
+}
+
+fieldset input {
+	font-family : sans-serif;
+	font-size : medium;
+	border-spacing : 2px;
+	border : 1px solid #b5bcc7;
+	padding : 2px;
+}
+
+fieldset label {
+	width : 120px;
+	margin-right : 20px;
+	display : inline-block;
+	text-align : right;
+	color : gray;
+}
+
+body.otp {
+	margin : 1em;
+	padding : 0px;
+}
+
+form.otpform {
+	margin : 0px;
+	padding : 0px;
+}
+
+form.otpform label {
+	margin : 0px;
+	padding : 0px;
+}
+
+body.otp div.content {
+	display : inline-block;
+	width : auto;
+}
+
+span.hint {
+	font-size : 10px;
+	color : gray;
+}

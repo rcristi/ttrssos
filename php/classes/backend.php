@@ -11,7 +11,7 @@ class Backend extends Handler {
 
 		require_once "digest.php";
 
-		$rv = prepare_headlines_digest($this->link, $_SESSION['uid'], 1, 1000);
+		$rv = prepare_headlines_digest($_SESSION['uid'], 1, 1000);
 
 		$rv[3] = "<pre>" . $rv[3] . "</pre>";
 
@@ -19,8 +19,8 @@ class Backend extends Handler {
 	}
 
 	private function display_main_help() {
-		$info = get_hotkeys_info($this->link);
-		$imap = get_hotkeys_map($this->link);
+		$info = get_hotkeys_info();
+		$imap = get_hotkeys_map();
 		$omap = array();
 
 		foreach ($imap[1] as $sequence => $action) {
@@ -28,6 +28,10 @@ class Backend extends Handler {
 
 			array_push($omap[$action], $sequence);
 		}
+
+		print_notice("<a target=\"_blank\" href=\"http://tt-rss.org/wiki/InterfaceTips\">".
+			__("Other interface tips are available in the Tiny Tiny RSS wiki.") .
+			"</a>");
 
 		print "<ul class='helpKbList' id='helpKbList'>";
 
@@ -39,27 +43,46 @@ class Backend extends Handler {
 
 			foreach ($hotkeys as $action => $description) {
 
-				foreach ($omap[$action] as $sequence) {
-					if (strpos($sequence, "|") !== FALSE) {
-						$sequence = substr($sequence,
-							strpos($sequence, "|")+1,
-							strlen($sequence));
+				if (is_array($omap[$action])) {
+					foreach ($omap[$action] as $sequence) {
+						if (strpos($sequence, "|") !== FALSE) {
+							$sequence = substr($sequence,
+								strpos($sequence, "|")+1,
+								strlen($sequence));
+						} else {
+							$keys = explode(" ", $sequence);
+
+							for ($i = 0; $i < count($keys); $i++) {
+								if (strlen($keys[$i]) > 1) {
+									$tmp = '';
+									foreach (str_split($keys[$i]) as $c) {
+										switch ($c) {
+										case '*':
+											$tmp .= __('Shift') . '+';
+											break;
+										case '^':
+											$tmp .= __('Ctrl') . '+';
+											break;
+										default:
+											$tmp .= $c;
+										}
+									}
+									$keys[$i] = $tmp;
+								}
+							}
+							$sequence = join(" ", $keys);
+						}
+
+						print "<li>";
+					 	print "<span class='hksequence'>$sequence</span>";
+					  	print $description;
+						print "</li>";
 					}
-
-					print "<li>";
-				 	print "<span class='hksequence'>$sequence</span>";
-				  	print $description;
-					print "</li>";
-
 				}
 			}
 		}
 
 		print "</ul>";
-
-		print "<p><a target=\"_blank\" href=\"http://tt-rss.org/wiki/InterfaceTips\">".
-			__("Other interface tips are available in the Tiny Tiny RSS wiki.") .
-			"</a></p>";
 	}
 
 	function help() {

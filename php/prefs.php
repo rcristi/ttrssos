@@ -1,7 +1,18 @@
 <?php
+	if (file_exists("install") && !file_exists("config.php")) {
+		header("Location: install/");
+	}
+
 	set_include_path(dirname(__FILE__) ."/include" . PATH_SEPARATOR .
 		get_include_path());
 
+	if (!file_exists("config.php")) {
+		print "<b>Fatal Error</b>: You forgot to copy
+		<b>config.php-dist</b> to <b>config.php</b> and edit it.\n";
+		exit;
+	}
+
+	require_once "autoload.php";
 	require_once "sessions.php";
 	require_once "functions.php";
 	require_once "sanity_check.php";
@@ -9,15 +20,9 @@
 	require_once "config.php";
 	require_once "db-prefs.php";
 
-	$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+	if (!init_plugins()) return;
 
-	if (!init_connection($link)) return;
-
-	login_sequence($link);
-
-	$dt_add = time();
-
-	no_cache_incantation();
+	login_sequence();
 
 	header('Content-Type: text/html; charset=utf-8');
 ?>
@@ -26,41 +31,50 @@
 <html>
 <head>
 	<title>Tiny Tiny RSS : <?php echo __("Preferences") ?></title>
-	<link rel="stylesheet" type="text/css" href="lib/dijit/themes/claro/claro.css"/>
-	<link rel="stylesheet" type="text/css" href="tt-rss.css?<?php echo $dt_add ?>"/>
 
-	<?php print_user_stylesheet($link) ?>
+	<?php stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
+	<?php stylesheet_tag("tt-rss.css"); ?>
+	<?php stylesheet_tag("prefs.css"); ?>
+
+	<?php if ($_SESSION["uid"]) {
+		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
+		if ($theme) {
+			stylesheet_tag("themes/$theme");
+		}
+	}
+	?>
+
+	<?php print_user_stylesheet() ?>
 
 	<link rel="shortcut icon" type="image/png" href="images/favicon.png"/>
+	<link rel="icon" type="image/png" sizes="72x72" href="images/favicon-72px.png" />
 
-	<script type="text/javascript" src="lib/prototype.js"></script>
-	<script type="text/javascript" src="lib/position.js"></script>
-	<script type="text/javascript" src="lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls"></script>
-	<script type="text/javascript" src="lib/dojo/dojo.js"></script>
-	<script type="text/javascript" src="lib/dijit/dijit.js"></script>
-	<script type="text/javascript" src="lib/dojo/tt-rss-layer.js"></script>
+	<?php
+	foreach (array("lib/prototype.js",
+				"lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls",
+				"lib/dojo/dojo.js",
+				"lib/dijit/dijit.js",
+				"lib/CheckBoxTree.js",
+				"lib/dojo/tt-rss-layer.js",
+				"errors.php?mode=js") as $jsfile) {
 
-	<script type="text/javascript" charset="utf-8" src="localized_js.php?<?php echo $dt_add ?>"></script>
+		javascript_tag($jsfile);
+
+	} ?>
 
 	<script type="text/javascript">
 	<?php
-		require 'lib/jsmin.php';
+		require 'lib/jshrink/Minifier.php';
 
-		global $pluginhost;
-
-		foreach ($pluginhost->get_plugins() as $n => $p) {
+		foreach (PluginHost::getInstance()->get_plugins() as $n => $p) {
 			if (method_exists($p, "get_prefs_js")) {
-				echo JSMin::minify($p->get_prefs_js());
+				echo JShrink\Minifier::minify($p->get_prefs_js());
 			}
 		}
 
-		foreach (array("functions", "deprecated", "prefs") as $js) {
-			if (!isset($_GET['debug'])) {
-				echo JSMin::minify(file_get_contents("js/$js.js"));
-			} else {
-				echo file_get_contents("js/$js.js");
-			}
-		}
+		print get_minified_js(array("functions", "deprecated", "prefs", "PrefFeedTree", "PrefFilterTree", "PrefLabelTree"));
+
+		init_js_translations();
 	?>
 	</script>
 
@@ -76,7 +90,7 @@
 
 <body id="ttrssPrefs" class="claro">
 
-<div id="notify" class="notify"><span id="notify_body">&nbsp;</span></div>
+<div id="notify" class="notify" style="display : none"></div>
 <div id="cmdline" style="display : none"></div>
 
 <div id="overlay">
@@ -88,8 +102,6 @@
 		<noscript><br/><?php print_error('Javascript is disabled. Please enable it.') ?></noscript>
 	</div>
 </div>
-
-<img id="piggie" src="images/piggie.png" style="display : none" alt="piggie"/>
 
 <div id="header" dojoType="dijit.layout.ContentPane" region="top">
 	<!-- <a href='#' onclick="showHelp()"><?php echo __("Keyboard shortcuts") ?></a> | -->
@@ -115,23 +127,28 @@
 	<div id="userConfigTab" dojoType="dijit.layout.ContentPane"
 		href="backend.php?op=pref-users"
 		title="<?php echo __('Users') ?>"></div>
+	<div id="systemConfigTab" dojoType="dijit.layout.ContentPane"
+		href="backend.php?op=pref-system"
+		title="<?php echo __('System') ?>"></div>
 <?php } ?>
 <?php
-	$pluginhost->run_hooks($pluginhost::HOOK_PREFS_TABS,
+	PluginHost::getInstance()->run_hooks(PluginHost::HOOK_PREFS_TABS,
 		"hook_prefs_tabs", false);
 ?>
 </div>
 
 <div id="footer" dojoType="dijit.layout.ContentPane" region="bottom">
 	<a class="insensitive" target="_blank" href="http://tt-rss.org/">
-	Tiny Tiny RSS</a> &copy; 2005-<?php echo date('Y') ?>
+	Tiny Tiny RSS</a>
+	<?php if (!defined('HIDE_VERSION')) { ?>
+		 v<?php echo VERSION ?>
+	<?php } ?>
+	&copy; 2005-<?php echo date('Y') ?>
 	<a class="insensitive" target="_blank"
 	href="http://fakecake.org/">Andrew Dolgov</a>
 </div> <!-- footer -->
 
 </div>
-
-<?php db_close($link); ?>
 
 </body>
 </html>

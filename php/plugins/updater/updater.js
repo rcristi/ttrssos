@@ -16,7 +16,7 @@ function updateSelf() {
 
 				notify_progress("Loading, please wait...", true);
 				new Ajax.Request("backend.php", {
-				parameters: "?op=pluginhandler&plugin=updater&method=performUpdate&step=" + step +
+				parameters: "op=pluginhandler&plugin=updater&method=performUpdate&step=" + step +
 					"&params=" + param_escape(JSON.stringify(dialog.attr("update-params"))),
 				onComplete: function(transport) {
 					try {
@@ -55,7 +55,7 @@ function updateSelf() {
 				}
 			},
 			start: function() {
-				if (prompt(__("Live updating is considered experimental. Backup your tt-rss directory before continuing. Please type 'yes' to continue.")) == 'yes') {
+				if (prompt(__("Backup your tt-rss directory before continuing. Please type 'yes' to continue.")) == 'yes') {
 					dialog.performUpdate(0);
 				}
 			},

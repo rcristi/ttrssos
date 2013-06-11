@@ -19,16 +19,9 @@ class Pref_Users extends Handler_Protected {
 
 		function userdetails() {
 
-			header("Content-Type: text/xml");
-			print "<dlg>";
-
 			$uid = sprintf("%d", $_REQUEST["id"]);
 
-			print "<title>".__('User details')."</title>";
-
-			print "<content><![CDATA[";
-
-			$result = db_query($this->link, "SELECT login,
+			$result = $this->dbh->query("SELECT login,
 				".SUBSTRING_FOR_DATE."(last_login,1,16) AS last_login,
 				access_level,
 				(SELECT COUNT(int_id) FROM ttrss_user_entries
@@ -37,33 +30,33 @@ class Pref_Users extends Handler_Protected {
 				FROM ttrss_users
 				WHERE id = '$uid'");
 
-			if (db_num_rows($result) == 0) {
+			if ($this->dbh->num_rows($result) == 0) {
 				print "<h1>".__('User not found')."</h1>";
 				return;
 			}
 
 			// print "<h1>User Details</h1>";
 
-			$login = db_fetch_result($result, 0, "login");
+			$login = $this->dbh->fetch_result($result, 0, "login");
 
 			print "<table width='100%'>";
 
-			$last_login = make_local_datetime($this->link,
-				db_fetch_result($result, 0, "last_login"), true);
+			$last_login = make_local_datetime(
+				$this->dbh->fetch_result($result, 0, "last_login"), true);
 
-			$created = make_local_datetime($this->link,
-				db_fetch_result($result, 0, "created"), true);
+			$created = make_local_datetime(
+				$this->dbh->fetch_result($result, 0, "created"), true);
 
-			$access_level = db_fetch_result($result, 0, "access_level");
-			$stored_articles = db_fetch_result($result, 0, "stored_articles");
+			$access_level = $this->dbh->fetch_result($result, 0, "access_level");
+			$stored_articles = $this->dbh->fetch_result($result, 0, "stored_articles");
 
 			print "<tr><td>".__('Registered')."</td><td>$created</td></tr>";
 			print "<tr><td>".__('Last logged in')."</td><td>$last_login</td></tr>";
 
-			$result = db_query($this->link, "SELECT COUNT(id) as num_feeds FROM ttrss_feeds
+			$result = $this->dbh->query("SELECT COUNT(id) as num_feeds FROM ttrss_feeds
 				WHERE owner_uid = '$uid'");
 
-			$num_feeds = db_fetch_result($result, 0, "num_feeds");
+			$num_feeds = $this->dbh->fetch_result($result, 0, "num_feeds");
 
 			print "<tr><td>".__('Subscribed feeds count')."</td><td>$num_feeds</td></tr>";
 
@@ -71,14 +64,12 @@ class Pref_Users extends Handler_Protected {
 
 			print "<h1>".__('Subscribed feeds')."</h1>";
 
-			$result = db_query($this->link, "SELECT id,title,site_url FROM ttrss_feeds
+			$result = $this->dbh->query("SELECT id,title,site_url FROM ttrss_feeds
 				WHERE owner_uid = '$uid' ORDER BY title");
 
 			print "<ul class=\"userFeedList\">";
 
-			$row_class = "odd";
-
-			while ($line = db_fetch_assoc($result)) {
+			while ($line = $this->dbh->fetch_assoc($result)) {
 
 				$icon_file = ICONS_URL."/".$line["id"].".ico";
 
@@ -88,13 +79,11 @@ class Pref_Users extends Handler_Protected {
 					$feed_icon = "<img class=\"tinyFeedIcon\" src=\"images/blank_icon.gif\">";
 				}
 
-				print "<li class=\"$row_class\">$feed_icon&nbsp;<a href=\"".$line["site_url"]."\">".$line["title"]."</a></li>";
-
-				$row_class = $row_class == "even" ? "odd" : "even";
+				print "<li>$feed_icon&nbsp;<a href=\"".$line["site_url"]."\">".$line["title"]."</a></li>";
 
 			}
 
-			if (db_num_rows($result) < $num_feeds) {
+			if ($this->dbh->num_rows($result) < $num_feeds) {
 				// FIXME - add link to show ALL subscribed feeds here somewhere
 				print "<li><img
 					class=\"tinyFeedIcon\" src=\"images/blank_icon.gif\">&nbsp;...</li>";
@@ -106,33 +95,24 @@ class Pref_Users extends Handler_Protected {
 				<button onclick=\"closeInfoBox()\">".__("Close this window").
 				"</button></div>";
 
-			print "]]></content></dlg>";
-
 			return;
 		}
 
 		function edit() {
 			global $access_level_names;
 
-			header("Content-Type: text/xml");
-
-			$id = db_escape_string($_REQUEST["id"]);
-
-			print "<dlg id=\"$method\">";
-			print "<title>".__('User Editor')."</title>";
-			print "<content><![CDATA[";
-
+			$id = $this->dbh->escape_string($_REQUEST["id"]);
 			print "<form id=\"user_edit_form\" onsubmit='return false'>";
 
 			print "<input type=\"hidden\" name=\"id\" value=\"$id\">";
 			print "<input type=\"hidden\" name=\"op\" value=\"pref-users\">";
 			print "<input type=\"hidden\" name=\"method\" value=\"editSave\">";
 
-			$result = db_query($this->link, "SELECT * FROM ttrss_users WHERE id = '$id'");
+			$result = $this->dbh->query("SELECT * FROM ttrss_users WHERE id = '$id'");
 
-			$login = db_fetch_result($result, 0, "login");
-			$access_level = db_fetch_result($result, 0, "access_level");
-			$email = db_fetch_result($result, 0, "email");
+			$login = $this->dbh->fetch_result($result, 0, "login");
+			$access_level = $this->dbh->fetch_result($result, 0, "access_level");
+			$email = $this->dbh->fetch_result($result, 0, "email");
 
 			$sel_disabled = ($id == $_SESSION["uid"]) ? "disabled" : "";
 
@@ -169,7 +149,7 @@ class Pref_Users extends Handler_Protected {
 			print "<br/>";
 
 			print __('Change password to') .
-				" <input size=\"20\" onkeypress=\"return filterCR(event, userEditSave)\"
+				" <input type=\"password\" size=\"20\" onkeypress=\"return filterCR(event, userEditSave)\"
 				name=\"password\">";
 
 			print "</div>";
@@ -193,17 +173,15 @@ class Pref_Users extends Handler_Protected {
 				<button onclick=\"return userEditCancel()\">".
 					__('Cancel')."</button></div>";
 
-			print "]]></content></dlg>";
-
 			return;
 		}
 
 		function editSave() {
-			$login = db_escape_string(trim($_REQUEST["login"]));
-			$uid = db_escape_string($_REQUEST["id"]);
+			$login = $this->dbh->escape_string(trim($_REQUEST["login"]));
+			$uid = $this->dbh->escape_string($_REQUEST["id"]);
 			$access_level = (int) $_REQUEST["access_level"];
-			$email = db_escape_string(trim($_REQUEST["email"]));
-			$password = db_escape_string(trim($_REQUEST["password"]));
+			$email = $this->dbh->escape_string(trim($_REQUEST["email"]));
+			$password = $_REQUEST["password"];
 
 			if ($password) {
 				$salt = substr(bin2hex(get_random_bytes(125)), 0, 250);
@@ -213,52 +191,52 @@ class Pref_Users extends Handler_Protected {
 				$pass_query_part = "";
 			}
 
-			db_query($this->link, "UPDATE ttrss_users SET $pass_query_part login = '$login',
-				access_level = '$access_level', email = '$email', otp_enabled = 'false'
+			$this->dbh->query("UPDATE ttrss_users SET $pass_query_part login = '$login',
+				access_level = '$access_level', email = '$email', otp_enabled = false
 				WHERE id = '$uid'");
 
 		}
 
 		function remove() {
-			$ids = split(",", db_escape_string($_REQUEST["ids"]));
+			$ids = explode(",", $this->dbh->escape_string($_REQUEST["ids"]));
 
 			foreach ($ids as $id) {
 				if ($id != $_SESSION["uid"] && $id != 1) {
-					db_query($this->link, "DELETE FROM ttrss_tags WHERE owner_uid = '$id'");
-					db_query($this->link, "DELETE FROM ttrss_feeds WHERE owner_uid = '$id'");
-					db_query($this->link, "DELETE FROM ttrss_users WHERE id = '$id'");
+					$this->dbh->query("DELETE FROM ttrss_tags WHERE owner_uid = '$id'");
+					$this->dbh->query("DELETE FROM ttrss_feeds WHERE owner_uid = '$id'");
+					$this->dbh->query("DELETE FROM ttrss_users WHERE id = '$id'");
 				}
 			}
 		}
 
 		function add() {
 
-			$login = db_escape_string(trim($_REQUEST["login"]));
+			$login = $this->dbh->escape_string(trim($_REQUEST["login"]));
 			$tmp_user_pwd = make_password(8);
 			$salt = substr(bin2hex(get_random_bytes(125)), 0, 250);
 			$pwd_hash = encrypt_password($tmp_user_pwd, $salt, true);
 
-			$result = db_query($this->link, "SELECT id FROM ttrss_users WHERE
+			$result = $this->dbh->query("SELECT id FROM ttrss_users WHERE
 				login = '$login'");
 
-			if (db_num_rows($result) == 0) {
+			if ($this->dbh->num_rows($result) == 0) {
 
-				db_query($this->link, "INSERT INTO ttrss_users
+				$this->dbh->query("INSERT INTO ttrss_users
 					(login,pwd_hash,access_level,last_login,created, salt)
 					VALUES ('$login', '$pwd_hash', 0, null, NOW(), '$salt')");
 
 
-				$result = db_query($this->link, "SELECT id FROM ttrss_users WHERE
+				$result = $this->dbh->query("SELECT id FROM ttrss_users WHERE
 					login = '$login' AND pwd_hash = '$pwd_hash'");
 
-				if (db_num_rows($result) == 1) {
+				if ($this->dbh->num_rows($result) == 1) {
 
-					$new_uid = db_fetch_result($result, 0, "id");
+					$new_uid = $this->dbh->fetch_result($result, 0, "id");
 
 					print format_notice(T_sprintf("Added user <b>%s</b> with password <b>%s</b>",
 						$login, $tmp_user_pwd));
 
-					initialize_user($this->link, $new_uid);
+					initialize_user($new_uid);
 
 				} else {
 
@@ -270,11 +248,9 @@ class Pref_Users extends Handler_Protected {
 			}
 		}
 
-		function resetPass() {
+		static function resetUserPassword($uid, $show_password) {
 
-			$uid = db_escape_string($_REQUEST["id"]);
-
-			$result = db_query($this->link, "SELECT login,email
+			$result = db_query("SELECT login,email
 				FROM ttrss_users WHERE id = '$uid'");
 
 			$login = db_fetch_result($result, 0, "login");
@@ -286,18 +262,18 @@ class Pref_Users extends Handler_Protected {
 
 			$pwd_hash = encrypt_password($tmp_user_pwd, $new_salt, true);
 
-			db_query($this->link, "UPDATE ttrss_users SET pwd_hash = '$pwd_hash', salt = '$new_salt'
+			db_query("UPDATE ttrss_users SET pwd_hash = '$pwd_hash', salt = '$new_salt'
 				WHERE id = '$uid'");
 
-			print T_sprintf("Changed password of user <b>%s</b>
-				 to <b>%s</b>", $login, $tmp_user_pwd);
+			if ($show_password) {
+				print T_sprintf("Changed password of user <b>%s</b> to <b>%s</b>", $login, $tmp_user_pwd);
+			} else {
+				print_notice(T_sprintf("Sending new password of user <b>%s</b> to <b>%s</b>", $login, $email));
+			}
 
-			require_once 'lib/phpmailer/class.phpmailer.php';
+			require_once 'classes/ttrssmailer.php';
 
 			if ($email) {
-				print " ";
-				print T_sprintf("Notifying <b>%s</b>.", $email);
-
 				require_once "lib/MiniTemplator.class.php";
 
 				$tpl = new MiniTemplator;
@@ -313,35 +289,19 @@ class Pref_Users extends Handler_Protected {
 
 				$tpl->generateOutputToString($message);
 
-				$mail = new PHPMailer();
+				$mail = new ttrssMailer();
 
-				$mail->PluginDir = "lib/phpmailer/";
-				$mail->SetLanguage("en", "lib/phpmailer/language/");
-
-				$mail->CharSet = "UTF-8";
-
-				$mail->From = SMTP_FROM_ADDRESS;
-				$mail->FromName = SMTP_FROM_NAME;
-				$mail->AddAddress($email, $login);
-
-				if (SMTP_HOST) {
-					$mail->Host = SMTP_HOST;
-					$mail->Mailer = "smtp";
-					$mail->SMTPAuth = SMTP_LOGIN != '';
-					$mail->Username = SMTP_LOGIN;
-					$mail->Password = SMTP_PASSWORD;
-				}
-
-				$mail->IsHTML(false);
-				$mail->Subject = __("[tt-rss] Password change notification");
-				$mail->Body = $message;
-
-				$rc = $mail->Send();
+				$rc = $mail->quickMail($email, $login,
+					__("[tt-rss] Password change notification"),
+					$message, false);
 
 				if (!$rc) print_error($mail->ErrorInfo);
 			}
+		}
 
-			print "</div>";
+		function resetPass() {
+			$uid = $this->dbh->escape_string($_REQUEST["id"]);
+			Pref_Users::resetUserPassword($uid, true);
 		}
 
 		function index() {
@@ -353,7 +313,7 @@ class Pref_Users extends Handler_Protected {
 
 			print "<div id=\"pref-user-toolbar\" dojoType=\"dijit.Toolbar\">";
 
-			$user_search = db_escape_string($_REQUEST["search"]);
+			$user_search = $this->dbh->escape_string($_REQUEST["search"]);
 
 			if (array_key_exists("search", $_REQUEST)) {
 				$_SESSION["prefs_user_search"] = $user_search;
@@ -368,7 +328,7 @@ class Pref_Users extends Handler_Protected {
 					__('Search')."</button>
 				</div>";
 
-			$sort = db_escape_string($_REQUEST["sort"]);
+			$sort = $this->dbh->escape_string($_REQUEST["sort"]);
 
 			if (!$sort || $sort == "undefined") {
 				$sort = "login";
@@ -403,7 +363,7 @@ class Pref_Users extends Handler_Protected {
 
 			if ($user_search) {
 
-				$user_search = split(" ", $user_search);
+				$user_search = explode(" ", $user_search);
 				$tokens = array();
 
 				foreach ($user_search as $token) {
@@ -417,7 +377,7 @@ class Pref_Users extends Handler_Protected {
 				$user_search_query = "";
 			}
 
-			$result = db_query($this->link, "SELECT
+			$result = $this->dbh->query("SELECT
 					id,login,access_level,email,
 					".SUBSTRING_FOR_DATE."(last_login,1,16) as last_login,
 					".SUBSTRING_FOR_DATE."(created,1,16) as created
@@ -428,7 +388,7 @@ class Pref_Users extends Handler_Protected {
 					id > 0
 				ORDER BY $sort");
 
-			if (db_num_rows($result) > 0) {
+			if ($this->dbh->num_rows($result) > 0) {
 
 			print "<p><table width=\"100%\" cellspacing=\"0\"
 				class=\"prefUserList\" id=\"prefUserList\">";
@@ -442,9 +402,7 @@ class Pref_Users extends Handler_Protected {
 
 			$lnum = 0;
 
-			while ($line = db_fetch_assoc($result)) {
-
-				$class = ($lnum % 2) ? "even" : "odd";
+			while ($line = $this->dbh->fetch_assoc($result)) {
 
 				$uid = $line["id"];
 
@@ -452,8 +410,8 @@ class Pref_Users extends Handler_Protected {
 
 				$line["login"] = htmlspecialchars($line["login"]);
 
-				$line["created"] = make_local_datetime($this->link, $line["created"], false);
-				$line["last_login"] = make_local_datetime($this->link, $line["last_login"], false);
+				$line["created"] = make_local_datetime($line["created"], false);
+				$line["last_login"] = make_local_datetime($line["last_login"], false);
 
 				print "<td align='center'><input onclick='toggleSelectRow2(this);'
 					dojoType=\"dijit.form.CheckBox\" type=\"checkbox\"
@@ -489,8 +447,7 @@ class Pref_Users extends Handler_Protected {
 
 			print "</div>"; #pane
 
-			global $pluginhost;
-			$pluginhost->run_hooks($pluginhost::HOOK_PREFS_TAB,
+			PluginHost::getInstance()->run_hooks(PluginHost::HOOK_PREFS_TAB,
 				"hook_prefs_tab", "prefUsers");
 
 			print "</div>"; #container

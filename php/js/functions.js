@@ -1,7 +1,8 @@
-var notify_silent = false;
 var loading_progress = 0;
 var sanity_check_done = false;
 var init_params = {};
+var _label_base_index = -1024;
+var notify_hide_timerid = false;
 
 Ajax.Base.prototype.initialize = Ajax.Base.prototype.initialize.wrap(
 	function (callOriginal, options) {
@@ -48,6 +49,21 @@ function exception_error(location, e, ext_info) {
 				ext_info = ext_info.responseText;
 			}
 		}
+
+		try {
+			new Ajax.Request("backend.php", {
+				parameters: {op: "rpc", method: "log", logmsg: msg},
+				onComplete: function (transport) {
+					console.log(transport.responseText);
+				} });
+
+		} catch (eii) {
+			console.log("Exception while trying to log the error.");
+			console.log(eii);
+		}
+
+		msg += "<p>"+ __("The error will be reported to the configured log destination.") +
+			"</p>";
 
 		var content = "<div class=\"fatalError\">" +
 			"<pre>" + msg + "</pre>";
@@ -105,7 +121,28 @@ function exception_error(location, e, ext_info) {
 
 		dialog.show();
 
-	} catch (e) {
+	} catch (ei) {
+		console.log("Exception while trying to report an exception. Oh boy.");
+		console.log(ei);
+		console.log("Original exception:");
+		console.log(e);
+
+		msg += "\n\nAdditional exception caught while trying to show the error dialog.\n\n" +  format_exception_error('exception_error', ei);
+
+		try {
+			new Ajax.Request("backend.php", {
+				parameters: {op: "rpc", method: "log", logmsg: msg},
+				onComplete: function (transport) {
+					console.log(transport.responseText);
+				} });
+
+		} catch (eii) {
+			console.log("Third exception while trying to log the error! Seriously?");
+			console.log(eii);
+		}
+
+		msg += "\n\nThe error will be reported to the configured log destination.";
+
 		alert(msg);
 	}
 
@@ -146,42 +183,28 @@ function param_unescape(arg) {
 		return unescape(arg);
 }
 
-var notify_hide_timerid = false;
 
 function hide_notify() {
-	var n = $("notify");
-	if (n) {
-		n.style.display = "none";
-	}
-}
-
-function notify_silent_next() {
-	notify_silent = true;
+	Element.hide('notify');
 }
 
 function notify_real(msg, no_hide, n_type) {
 
-	if (notify_silent) {
-		notify_silent = false;
-		return;
-	}
-
 	var n = $("notify");
-	var nb = $("notify_body");
 
-	if (!n || !nb) return;
+	if (!n) return;
 
 	if (notify_hide_timerid) {
 		window.clearTimeout(notify_hide_timerid);
 	}
 
 	if (msg == "") {
-		if (n.style.display == "block") {
+		if (Element.visible(n)) {
 			notify_hide_timerid = window.setTimeout("hide_notify()", 0);
 		}
 		return;
 	} else {
-		n.style.display = "block";
+		Element.show(n);
 	}
 
 	/* types:
@@ -193,29 +216,31 @@ function notify_real(msg, no_hide, n_type) {
 
 	*/
 
-	if (typeof __ != 'undefined') {
-		msg = __(msg);
-	}
+	msg = "<span class=\"msg\"> " + __(msg) + "</span>";
 
 	if (n_type == 1) {
 		n.className = "notify";
 	} else if (n_type == 2) {
-		n.className = "notifyProgress";
-		msg = "<img src='"+getInitParam("sign_progress")+"'> " + msg;
+		n.className = "notify progress";
+		msg = "<span><img src='images/indicator_white.gif'></span>" + msg;
+		no_hide = true;
 	} else if (n_type == 3) {
-		n.className = "notifyError";
-		msg = "<img src='"+getInitParam("sign_excl")+"'> " + msg;
+		n.className = "notify error";
+		msg = "<span><img src='images/sign_excl.svg'></span>" + msg;
 	} else if (n_type == 4) {
-		n.className = "notifyInfo";
-		msg = "<img src='"+getInitParam("sign_info")+"'> " + msg;
+		n.className = "notify info";
+		msg = "<span><img src='images/sign_info.svg'></span>" + msg;
 	}
+
+	msg += " <span><img src=\"images/close_notify.svg\" class=\"close\" title=\"" +
+		__("Click to close") + "\" onclick=\"notify('')\"></span>";
 
 //	msg = "<img src='images/live_com_loading.gif'> " + msg;
 
-	nb.innerHTML = msg;
+	n.innerHTML = msg;
 
 	if (!no_hide) {
-		notify_hide_timerid = window.setTimeout("hide_notify()", 3000);
+		notify_hide_timerid = window.setTimeout("hide_notify()", 5*1000);
 	}
 }
 
@@ -363,6 +388,9 @@ function toggleSelectRow2(sender, row, is_cdm) {
 		row.addClassName('Selected');
 	else
 		row.removeClassName('Selected');
+
+	if (typeof updateSelectedPrompt != undefined)
+		updateSelectedPrompt();
 }
 
 
@@ -374,6 +402,9 @@ function toggleSelectRow(sender, row) {
 		row.addClassName('Selected');
 	else
 		row.removeClassName('Selected');
+
+	if (typeof updateSelectedPrompt != undefined)
+		updateSelectedPrompt();
 }
 
 function checkboxToggleElement(elem, id) {
@@ -410,7 +441,7 @@ function closeInfoBox(cleanup) {
 }
 
 
-function displayDlg(id, param, callback) {
+function displayDlg(title, id, param, callback) {
 
 	notify_progress("Loading, please wait...", true);
 
@@ -420,14 +451,14 @@ function displayDlg(id, param, callback) {
 	new Ajax.Request("backend.php", {
 		parameters: query,
 		onComplete: function (transport) {
-			infobox_callback2(transport);
+			infobox_callback2(transport, title);
 			if (callback) callback(transport);
 		} });
 
 	return false;
 }
 
-function infobox_callback2(transport) {
+function infobox_callback2(transport, title) {
 	try {
 		var dialog = false;
 
@@ -438,13 +469,7 @@ function infobox_callback2(transport) {
 		//console.log("infobox_callback2");
 		notify('');
 
-		var title = transport.responseXML.getElementsByTagName("title")[0];
-		if (title)
-			title = title.firstChild.nodeValue;
-
-		var content = transport.responseXML.getElementsByTagName("content")[0];
-
-		content = content.firstChild.nodeValue;
+		var content = transport.responseText;
 
 		if (!dialog) {
 			dialog = new dijit.Dialog({
@@ -509,7 +534,7 @@ function fatalError(code, msg, ext_info) {
 		if (code == 6) {
 			window.location.href = "index.php";
 		} else if (code == 5) {
-			window.location.href = "db-updater.php";
+			window.location.href = "public.php?op=dbupdate";
 		} else {
 
 			if (msg == "") msg = "Unknown error";
@@ -549,28 +574,6 @@ function fatalError(code, msg, ext_info) {
 	}
 }
 
-/* function filterDlgCheckType(sender) {
-
-	try {
-
-		var ftype = sender.value;
-
-		// if selected filter type is 5 (Date) enable the modifier dropbox
-		if (ftype == 5) {
-			Element.show("filterDlg_dateModBox");
-			Element.show("filterDlg_dateChkBox");
-		} else {
-			Element.hide("filterDlg_dateModBox");
-			Element.hide("filterDlg_dateChkBox");
-
-		}
-
-	} catch (e) {
-		exception_error("filterDlgCheckType", e);
-	}
-
-} */
-
 function filterDlgCheckAction(sender) {
 
 	try {
@@ -604,37 +607,9 @@ function filterDlgCheckAction(sender) {
 
 }
 
-function filterDlgCheckDate() {
-	try {
-		var dialog = dijit.byId("filterEditDlg");
-
-		var reg_exp = dialog.attr('value').reg_exp;
-
-		var query = "?op=rpc&method=checkDate&date=" + reg_exp;
-
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
-
-				var reply = JSON.parse(transport.responseText);
-
-				if (reply['result'] == true) {
-					alert(__("Date syntax appears to be correct:") + " " + reply['date']);
-					return;
-				} else {
-					alert(__("Date syntax is incorrect."));
-				}
-
-			} });
-
-
-	} catch (e) {
-		exception_error("filterDlgCheckDate", e);
-	}
-}
 
 function explainError(code) {
-	return displayDlg("explainError", code);
+	return displayDlg(__("Error explained"), "explainError", code);
 }
 
 function loading_set_progress(p) {
@@ -711,15 +686,6 @@ function hotkey_prefix_timeout() {
 		exception_error("hotkey_prefix_timeout", e);
 	}
 }
-
-function hideAuxDlg() {
-	try {
-		Element.hide('auxDlg');
-	} catch (e) {
-		exception_error("hideAuxDlg", e);
-	}
-}
-
 
 function uploadIconHandler(rc) {
 	try {
@@ -840,7 +806,7 @@ function addLabel(select, callback) {
 
 function quickAddFeed() {
 	try {
-		var query = "backend.php?op=dlg&method=quickAddFeed";
+		var query = "backend.php?op=feeds&method=quickAddFeed";
 
 		// overlapping widgets
 		if (dijit.byId("batchSubDlg")) dijit.byId("batchSubDlg").destroyRecursive();
@@ -870,7 +836,7 @@ function quickAddFeed() {
 								notify('');
 								Element.hide("feed_add_spinner");
 
-								console.log("GOT RC: " + rc);
+								console.log(rc);
 
 								switch (parseInt(rc['code'])) {
 								case 1:
@@ -886,45 +852,14 @@ function quickAddFeed() {
 									alert(__("Specified URL doesn't seem to contain any feeds."));
 									break;
 								case 4:
-									/* notify_progress("Searching for feed urls...", true);
-
-									new Ajax.Request("backend.php", {
-										parameters: 'op=rpc&method=extractfeedurls&url=' + param_escape(feed_url),
-										onComplete: function(transport, dialog, feed_url) {
-
-											notify('');
-
-											var reply = JSON.parse(transport.responseText);
-
-											var feeds = reply['urls'];
-
-											console.log(transport.responseText);
-
-											var select = dijit.byId("feedDlg_feedContainerSelect");
-
-											while (select.getOptions().length > 0)
-												select.removeOption(0);
-
-											var count = 0;
-											for (var feedUrl in feeds) {
-												select.addOption({value: feedUrl, label: feeds[feedUrl]});
-												count++;
-											}
-
-//											if (count > 5) count = 5;
-//											select.size = count;
-
-											Effect.Appear('feedDlg_feedsContainer', {duration : 0.5});
-										}
-									});
-									break; */
-
 									feeds = rc['feeds'];
 
 									var select = dijit.byId("feedDlg_feedContainerSelect");
 
 									while (select.getOptions().length > 0)
 										select.removeOption(0);
+
+									select.addOption({value: '', label: __("Expand to select feed")});
 
 									var count = 0;
 									for (var feedUrl in feeds) {
@@ -938,6 +873,11 @@ function quickAddFeed() {
 								case 5:
 									alert(__("Couldn't download the specified URL: %s").
 											replace("%s", rc['message']));
+									break;
+								case 6:
+									alert(__("XML validation failed: %s").
+											replace("%s", rc['message']));
+									break;
 									break;
 								case 0:
 									alert(__("You are already subscribed to this feed."));
@@ -963,6 +903,8 @@ function quickAddFeed() {
 function createNewRuleElement(parentNode, replaceNode) {
 	try {
 		var form = document.forms["filter_new_rule_form"];
+
+		form.reg_exp.value = form.reg_exp.value.replace(/(<([^>]+)>)/ig,"");
 
 		var query = "backend.php?op=pref-filters&method=printrulename&rule="+
 			param_escape(dojo.formToJson(form));
@@ -1209,20 +1151,31 @@ function quickAddFilter() {
 			var lh = dojo.connect(dialog, "onLoad", function(){
 				dojo.disconnect(lh);
 
-				var title = $("PTITLE-FULL-" + getActiveArticleId());
+				var query = "op=rpc&method=getlinktitlebyid&id=" + getActiveArticleId();
 
-				if (title || getActiveFeedId() || activeFeedIsCat()) {
-					if (title) title = title.innerHTML;
+				new Ajax.Request("backend.php", {
+				parameters: query,
+				onComplete: function(transport) {
+					var reply = JSON.parse(transport.responseText);
 
-					console.log(title + " " + getActiveFeedId());
+					var title = false;
 
-					var feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
-						getActiveFeedId();
+					if (reply && reply) title = reply.title;
 
-					var rule = { reg_exp: title, feed_id: feed_id, filter_type: 1 };
+					if (title || getActiveFeedId() || activeFeedIsCat()) {
 
-					addFilterRule(null, dojo.toJson(rule));
-				}
+						console.log(title + " " + getActiveFeedId());
+
+						var feed_id = activeFeedIsCat() ? 'CAT:' + parseInt(getActiveFeedId()) :
+							getActiveFeedId();
+
+						var rule = { reg_exp: title, feed_id: feed_id, filter_type: 1 };
+
+						addFilterRule(null, dojo.toJson(rule));
+					}
+
+				} });
+
 			});
 		}
 
@@ -1316,14 +1269,17 @@ function backend_sanity_check_callback(transport) {
 		if (params) {
 			console.log('reading init-params...');
 
-			if (params) {
-				for (k in params) {
-					var v = params[k];
-					console.log("IP: " + k + " => " + v);
-				}
+			for (k in params) {
+				var v = params[k];
+				console.log("IP: " + k + " => " + v);
+
+				if (k == "label_base_index") _label_base_index = parseInt(v);
 			}
 
 			init_params = params;
+
+			// PluginHost might not be available on non-index pages
+			window.PluginHost && PluginHost.run(PluginHost.HOOK_PARAMS_LOADED, init_params);
 		}
 
 		sanity_check_done = true;
@@ -1402,7 +1358,7 @@ function genUrlChangeKey(feed, is_cat) {
 
 			notify_progress("Trying to change address...", true);
 
-			var query = "?op=rpc&method=regenFeedKey&id=" + param_escape(feed) +
+			var query = "?op=pref-feeds&method=regenFeedKey&id=" + param_escape(feed) +
 				"&is_cat=" + param_escape(is_cat);
 
 			new Ajax.Request("backend.php", {
@@ -1630,7 +1586,7 @@ function editFeed(feed, event) {
 
 function feedBrowser() {
 	try {
-		var query = "backend.php?op=dlg&method=feedBrowser";
+		var query = "backend.php?op=feeds&method=feedBrowser";
 
 		if (dijit.byId("feedAddDlg"))
 			dijit.byId("feedAddDlg").hide();
@@ -1739,7 +1695,7 @@ function feedBrowser() {
 					} });
 			},
 			removeFromArchive: function() {
-				var selected = this.getSelectedFeeds();
+				var selected = this.getSelectedFeedIds();
 
 				if (selected.length > 0) {
 
@@ -1748,7 +1704,7 @@ function feedBrowser() {
 					if (confirm(pr)) {
 						Element.show('feed_browser_spinner');
 
-						var query = "?op=rpc&method=remarchived&ids=" +
+						var query = "?op=rpc&method=remarchive&ids=" +
 							param_escape(selected.toString());;
 
 						new Ajax.Request("backend.php", {
@@ -1904,5 +1860,77 @@ function helpDialog(topic) {
 	} catch (e) {
 		exception_error("helpDialog", e);
 	}
+}
+
+function htmlspecialchars_decode (string, quote_style) {
+  // http://kevin.vanzonneveld.net
+  // +   original by: Mirek Slugen
+  // +   improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+  // +   bugfixed by: Mateusz "loonquawl" Zalega
+  // +      input by: ReverseSyntax
+  // +      input by: Slawomir Kaniecki
+  // +      input by: Scott Cariss
+  // +      input by: Francois
+  // +   bugfixed by: Onno Marsman
+  // +    revised by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+  // +   bugfixed by: Brett Zamir (http://brett-zamir.me)
+  // +      input by: Ratheous
+  // +      input by: Mailfaker (http://www.weedem.fr/)
+  // +      reimplemented by: Brett Zamir (http://brett-zamir.me)
+  // +    bugfixed by: Brett Zamir (http://brett-zamir.me)
+  // *     example 1: htmlspecialchars_decode("<p>this -&gt; &quot;</p>", 'ENT_NOQUOTES');
+  // *     returns 1: '<p>this -> &quot;</p>'
+  // *     example 2: htmlspecialchars_decode("&amp;quot;");
+  // *     returns 2: '&quot;'
+  var optTemp = 0,
+    i = 0,
+    noquotes = false;
+  if (typeof quote_style === 'undefined') {
+    quote_style = 2;
+  }
+  string = string.toString().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  var OPTS = {
+    'ENT_NOQUOTES': 0,
+    'ENT_HTML_QUOTE_SINGLE': 1,
+    'ENT_HTML_QUOTE_DOUBLE': 2,
+    'ENT_COMPAT': 2,
+    'ENT_QUOTES': 3,
+    'ENT_IGNORE': 4
+  };
+  if (quote_style === 0) {
+    noquotes = true;
+  }
+  if (typeof quote_style !== 'number') { // Allow for a single string or an array of string flags
+    quote_style = [].concat(quote_style);
+    for (i = 0; i < quote_style.length; i++) {
+      // Resolve string input to bitwise e.g. 'PATHINFO_EXTENSION' becomes 4
+      if (OPTS[quote_style[i]] === 0) {
+        noquotes = true;
+      } else if (OPTS[quote_style[i]]) {
+        optTemp = optTemp | OPTS[quote_style[i]];
+      }
+    }
+    quote_style = optTemp;
+  }
+  if (quote_style & OPTS.ENT_HTML_QUOTE_SINGLE) {
+    string = string.replace(/&#0*39;/g, "'"); // PHP doesn't currently escape if more than one 0, but it should
+    // string = string.replace(/&apos;|&#x0*27;/g, "'"); // This would also be useful here, but not a part of PHP
+  }
+  if (!noquotes) {
+    string = string.replace(/&quot;/g, '"');
+  }
+  // Put this in last place to avoid escape being double-decoded
+  string = string.replace(/&amp;/g, '&');
+
+  return string;
+}
+
+
+function label_to_feed_id(label) {
+	return _label_base_index - 1 - Math.abs(label);
+}
+
+function feed_to_label_id(feed) {
+	return _label_base_index - 1 + Math.abs(feed);
 }
 
