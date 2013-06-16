@@ -219,6 +219,7 @@ function parse_counters(elems, scheduled_call) {
 			var error = elems[l].error;
 			var has_img = elems[l].has_img;
 			var updated = elems[l].updated;
+			var auxctr = parseInt(elems[l].auxcounter);
 
 			if (id == "global-unread") {
 				global_unread = ctr;
@@ -236,6 +237,7 @@ function parse_counters(elems, scheduled_call) {
 			}
 
 			setFeedUnread(id, (kind == "cat"), ctr);
+			setFeedValue(id, (kind == "cat"), 'auxcounter', auxctr);
 
 			if (kind != "cat") {
 				setFeedValue(id, false, 'error', error);
@@ -418,7 +420,7 @@ function catchupFeed(feed, is_cat, mode) {
 		case "1week":
 			str = __("Mark all articles in %s older than 1 week as read?");
 			break;
-		case "2weeks":
+		case "2week":
 			str = __("Mark all articles in %s older than 2 weeks as read?");
 			break;
 		default:

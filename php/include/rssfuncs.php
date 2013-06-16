@@ -190,8 +190,7 @@
 	} // function update_daemon_common
 
 	// ignore_daemon is not used
-	function update_rss_feed($feed, $ignore_daemon = false, $no_cache = false,
-		$override_url = false) {
+	function update_rss_feed($feed, $ignore_daemon = false, $no_cache = false) {
 
 		$debug_enabled = defined('DAEMON_EXTENDED_DEBUG') || $_REQUEST['xdebug'];
 
@@ -239,15 +238,20 @@
 
 		$feed = db_escape_string($feed);
 
-		if ($override_url) $fetch_url = $override_url;
-
 		$date_feed_processed = date('Y-m-d H:i');
 
 		$cache_filename = CACHE_DIR . "/simplepie/" . sha1($fetch_url) . ".xml";
 
+		$pluginhost = new PluginHost();
+		$pluginhost->set_debug($debug_enabled);
+		$user_plugins = get_pref("_ENABLED_PLUGINS", $owner_uid);
+
+		$pluginhost->load(PLUGINS, PluginHost::KIND_ALL);
+		$pluginhost->load($user_plugins, PluginHost::KIND_USER, $owner_uid);
+		$pluginhost->load_data();
+
 		$rss = false;
 		$rss_hash = false;
-		$cache_timestamp = file_exists($cache_filename) ? filemtime($cache_filename) : 0;
 
 		$force_refetch = isset($_REQUEST["force_refetch"]);
 
@@ -270,6 +274,10 @@
 
 		if (!$rss) {
 
+			foreach ($pluginhost->get_hooks(PluginHost::HOOK_FETCH_FEED) as $plugin) {
+				$feed_data = $plugin->hook_fetch_feed($feed_data, $fetch_url, $owner_uid, $feed);
+			}
+
 			if (!$feed_data) {
 				_debug("fetching [$fetch_url]...", $debug_enabled);
 				_debug("If-Modified-Since: ".gmdate('D, d M Y H:i:s \G\M\T', $last_article_timestamp), $debug_enabled);
@@ -291,7 +299,7 @@
 
 				_debug("fetch done.", $debug_enabled);
 
-				if ($feed_data) {
+				/* if ($feed_data) {
 					$error = verify_feed_xml($feed_data);
 
 					if ($error) {
@@ -307,7 +315,7 @@
 							if ($error) $feed_data = '';
 						}
 					}
-				}
+				} */
 			}
 
 			if (!$feed_data) {
@@ -333,16 +341,8 @@
 			}
 		}
 
-		$pluginhost = new PluginHost();
-		$pluginhost->set_debug($debug_enabled);
-		$user_plugins = get_pref("_ENABLED_PLUGINS", $owner_uid);
-
-		$pluginhost->load(PLUGINS, PluginHost::KIND_ALL);
-		$pluginhost->load($user_plugins, PluginHost::KIND_USER, $owner_uid);
-		$pluginhost->load_data();
-
 		foreach ($pluginhost->get_hooks(PluginHost::HOOK_FEED_FETCHED) as $plugin) {
-			$feed_data = $plugin->hook_feed_fetched($feed_data);
+			$feed_data = $plugin->hook_feed_fetched($feed_data, $fetch_url, $owner_uid, $feed);
 		}
 
 		// set last update to now so if anything *simplepie* crashes later we won't be
@@ -1349,14 +1349,14 @@
 			mb_strtolower(strip_tags($title), 'utf-8'));
 	}
 
-	function verify_feed_xml($feed_data) {
+	/* function verify_feed_xml($feed_data) {
 		libxml_use_internal_errors(true);
 		$doc = new DOMDocument();
 		$doc->loadXML($feed_data);
 		$error = libxml_get_last_error();
 		libxml_clear_errors();
 		return $error;
-	}
+	} */
 
 	function housekeeping_common($debug) {
 		expire_cached_files($debug);

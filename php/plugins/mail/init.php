@@ -56,7 +56,7 @@ class Mail extends Plugin {
 		$tpl->setVariable('USER_EMAIL', $user_email, true);
 		$tpl->setVariable('TTRSS_HOST', $_SERVER["HTTP_HOST"], true);
 
-		$result = db_query("SELECT link, content, title
+		$result = db_query("SELECT link, content, title, note 
 			FROM ttrss_user_entries, ttrss_entries WHERE id = ref_id AND
 			id IN ($param) AND owner_uid = " . $_SESSION["uid"]);
 
@@ -70,6 +70,11 @@ class Mail extends Plugin {
 				$subject = __("[Forwarded]") . " " . htmlspecialchars($line["title"]);
 
 			$tpl->setVariable('ARTICLE_TITLE', strip_tags($line["title"]));
+			$tnote = strip_tags($line["note"]);
+			if( $tnote != ''){
+				$tpl->setVariable('ARTICLE_NOTE', $tnote, true);
+				$tpl->addBlock('note');
+			}
 			$tpl->setVariable('ARTICLE_URL', strip_tags($line["link"]));
 
 			$tpl->addBlock('article');
@@ -136,7 +141,10 @@ class Mail extends Plugin {
 
 		$mail->From = strip_tags($_REQUEST['from_email']);
 		$mail->FromName = strip_tags($_REQUEST['from_name']);
-		$mail->AddAddress($_REQUEST['destination']);
+		//$mail->AddAddress($_REQUEST['destination']);
+		$addresses = explode(';', $_REQUEST['destination']);
+		foreach($addresses as $nextaddr)
+			$mail->AddAddress($nextaddr);
 
 		$mail->IsHTML(false);
 		$mail->Subject = $_REQUEST['subject'];

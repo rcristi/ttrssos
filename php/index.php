@@ -57,13 +57,14 @@
 	<title>Tiny Tiny RSS</title>
 
 	<?php stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
-	<?php stylesheet_tag("tt-rss.css"); ?>
-	<?php stylesheet_tag("cdm.css"); ?>
+	<?php stylesheet_tag("css/layout.css"); ?>
 
 	<?php if ($_SESSION["uid"]) {
 		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
-		if ($theme) {
+		if ($theme && file_exists("themes/$theme")) {
 			stylesheet_tag("themes/$theme");
+		} else {
+			stylesheet_tag("themes/default.css");
 		}
 	}
 	?>
@@ -87,7 +88,6 @@
 	foreach (array("lib/prototype.js",
 				"lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls",
 				"lib/dojo/dojo.js",
-				"lib/dijit/dijit.js",
 				"lib/dojo/tt-rss-layer.js",
 				"errors.php?mode=js") as $jsfile) {
 
@@ -96,6 +96,7 @@
 	} ?>
 
 	<script type="text/javascript">
+		require({cache:{}});
 	<?php
 		require 'lib/jshrink/Minifier.php';
 
@@ -258,6 +259,8 @@
 
 		<div id="headlines-toolbar" dojoType="dijit.layout.ContentPane" region="top">
 		</div>
+
+		<div id="floatingTitle" style="display : none"></div>
 
 		<div id="headlines-frame" dojoType="dijit.layout.ContentPane"
 				onscroll="headlines_scroll_handler(this)" region="center">

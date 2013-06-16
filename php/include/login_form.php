@@ -1,17 +1,18 @@
+<?php startup_gettext(); ?>
 <html>
 <head>
 	<title>Tiny Tiny RSS : Login</title>
 	<link rel="stylesheet" type="text/css" href="lib/dijit/themes/claro/claro.css"/>
-	<link rel="stylesheet" type="text/css" href="tt-rss.css">
+	<link rel="stylesheet" type="text/css" href="css/tt-rss.css">
 	<link rel="shortcut icon" type="image/png" href="images/favicon.png">
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 	<script type="text/javascript" src="lib/dojo/dojo.js"></script>
-	<script type="text/javascript" src="lib/dijit/dijit.js"></script>
 	<script type="text/javascript" src="lib/dojo/tt-rss-layer.js"></script>
 	<script type="text/javascript" src="lib/prototype.js"></script>
 	<script type="text/javascript" src="js/functions.js"></script>
 	<script type="text/javascript" charset="utf-8" src="errors.php?mode=js"></script>
 	<script type="text/javascript">
+		require({cache:{}});
 		Event.observe(window, 'load', function() {
 			init();
 		});
@@ -104,20 +105,19 @@
 
 <script type="text/javascript">
 function init() {
-	dojo.require("dijit.form.Button");
-	dojo.require("dijit.form.CheckBox");
-	dojo.require("dijit.form.Form");
-	dojo.require("dijit.form.Select");
-	dojo.require("dijit.form.TextBox");
-	dojo.require("dijit.form.ValidationTextBox");
 
-	dojo.parser.parse();
+	require(['dojo/parser','dijit/form/Button','dijit/form/CheckBox','dijit/form/Form',
+    	'dijit/form/Select','dijit/form/TextBox','dijit/form/ValidationTextBox'],function(parser){
+    		parser.parse();
+    		//show tooltip node only after this widget is instaniated.
+    		dojo.query('div[dojoType="dijit.Tooltip"]').style({
+    			display:''
+    		});
+		fetchProfiles();
+		dijit.byId("bw_limit").attr("checked", getCookie("ttrss_bwlimit") == 'true');
+		document.forms.loginForm.login.focus();
+    	});
 
-	fetchProfiles();
-
-	dijit.byId("bw_limit").attr("checked", getCookie("ttrss_bwlimit") == 'true');
-
-	document.forms.loginForm.login.focus();
 }
 
 function fetchProfiles() {
@@ -188,7 +188,6 @@ function bwLimitChange(elem) {
 				value="<?php echo $_SESSION["fake_login"] ?>" />
 		</div>
 
-		<?php if (strpos(PLUGINS, "auth_internal") !== FALSE) { ?>
 
 		<div class="row">
 			<label><?php echo __("Password:") ?></label>
@@ -196,10 +195,11 @@ function bwLimitChange(elem) {
 					style="width : 220px" class="input"
 					value="<?php echo $_SESSION["fake_password"] ?>"/>
 			<label></label>
+		<?php if (strpos(PLUGINS, "auth_internal") !== FALSE) { ?>
 			<a class='forgotpass' href="public.php?op=forgotpass"><?php echo __("I forgot my password") ?></a>
+		<?php } ?>
 		</div>
 
-		<?php } ?>
 
 		<div class="row">
 			<label><?php echo __("Profile:") ?></label>
@@ -217,7 +217,7 @@ function bwLimitChange(elem) {
 			<label id="bw_limit_label" style='display : inline' for="bw_limit"><?php echo __("Use less traffic") ?></label>
 		</div>
 
-		<div dojoType="dijit.Tooltip" connectId="bw_limit_label" position="below">
+		<div dojoType="dijit.Tooltip" connectId="bw_limit_label" position="below" style="display:none">
 <?php echo __("Does not display images in articles, reduces automatic refreshes."); ?>
 		</div>
 

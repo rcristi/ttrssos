@@ -33,13 +33,14 @@
 	<title>Tiny Tiny RSS : <?php echo __("Preferences") ?></title>
 
 	<?php stylesheet_tag("lib/dijit/themes/claro/claro.css"); ?>
-	<?php stylesheet_tag("tt-rss.css"); ?>
-	<?php stylesheet_tag("prefs.css"); ?>
+	<?php stylesheet_tag("css/layout.css"); ?>
 
 	<?php if ($_SESSION["uid"]) {
 		$theme = get_pref( "USER_CSS_THEME", $_SESSION["uid"], false);
-		if ($theme) {
+		if ($theme && file_exists("themes/$theme")) {
 			stylesheet_tag("themes/$theme");
+		} else {
+			stylesheet_tag("themes/default.css");
 		}
 	}
 	?>
@@ -53,8 +54,6 @@
 	foreach (array("lib/prototype.js",
 				"lib/scriptaculous/scriptaculous.js?load=effects,dragdrop,controls",
 				"lib/dojo/dojo.js",
-				"lib/dijit/dijit.js",
-				"lib/CheckBoxTree.js",
 				"lib/dojo/tt-rss-layer.js",
 				"errors.php?mode=js") as $jsfile) {
 
@@ -63,6 +62,7 @@
 	} ?>
 
 	<script type="text/javascript">
+		require({cache:{}});
 	<?php
 		require 'lib/jshrink/Minifier.php';
 
@@ -72,7 +72,7 @@
 			}
 		}
 
-		print get_minified_js(array("functions", "deprecated", "prefs", "PrefFeedTree", "PrefFilterTree", "PrefLabelTree"));
+		print get_minified_js(array("../lib/CheckBoxTree","functions", "deprecated", "prefs", "PrefFeedTree", "PrefFilterTree", "PrefLabelTree"));
 
 		init_js_translations();
 	?>

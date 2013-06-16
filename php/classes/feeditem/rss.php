@@ -16,9 +16,33 @@ class FeedItem_RSS extends FeedItem_Common {
 		if ($pubDate) {
 			return strtotime($pubDate->nodeValue);
 		}
+
+		$date = $this->xpath->query("dc:date", $this->elem)->item(0);
+
+		if ($date) {
+			return strtotime($date->nodeValue);
+		}
 	}
 
 	function get_link() {
+		$links = $this->xpath->query("atom:link", $this->elem);
+
+		foreach ($links as $link) {
+			if ($link && $link->hasAttribute("href") &&
+				(!$link->hasAttribute("rel")
+					|| $link->getAttribute("rel") == "alternate"
+					|| $link->getAttribute("rel") == "standout")) {
+
+				return $link->getAttribute("href");
+			}
+		}
+
+		$link = $this->elem->getElementsByTagName("guid")->item(0);
+
+		if ($link && $link->hasAttributes() && $link->getAttribute("isPermaLink") == "true") {
+			return $link->nodeValue;
+		}
+
 		$link = $this->elem->getElementsByTagName("link")->item(0);
 
 		if ($link) {

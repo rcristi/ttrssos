@@ -16,14 +16,29 @@ class FeedItem_Atom extends FeedItem_Common {
 		if ($updated) {
 			return strtotime($updated->nodeValue);
 		}
+
+		$published = $this->elem->getElementsByTagName("published")->item(0);
+
+		if ($published) {
+			return strtotime($published->nodeValue);
+		}
+
+		$date = $this->xpath->query("dc:date", $this->elem)->item(0);
+
+		if ($date) {
+			return strtotime($date->nodeValue);
+		}
 	}
 
 	function get_link() {
 		$links = $this->elem->getElementsByTagName("link");
 
 		foreach ($links as $link) {
-			if ($link && $link->hasAttribute("href") && (!$link->hasAttribute("rel")
-					|| $link->getAttribute("rel") == "alternate")) {
+			if ($link && $link->hasAttribute("href") &&
+				(!$link->hasAttribute("rel")
+					|| $link->getAttribute("rel") == "alternate"
+					|| $link->getAttribute("rel") == "standout")) {
+
 				return $link->getAttribute("href");
 			}
 		}
@@ -41,16 +56,29 @@ class FeedItem_Atom extends FeedItem_Common {
 		$content = $this->elem->getElementsByTagName("content")->item(0);
 
 		if ($content) {
+			if ($content->hasAttribute('type')) {
+				if ($content->getAttribute('type') == 'xhtml') {
+					return $this->doc->saveXML($content->firstChild->nextSibling);
+				}
+			}
+
 			return $content->nodeValue;
 		}
 	}
 
 	function get_description() {
-		$summary = $this->elem->getElementsByTagName("summary")->item(0);
+		$content = $this->elem->getElementsByTagName("summary")->item(0);
 
-		if ($summary) {
-			return $summary->nodeValue;
+		if ($content) {
+			if ($content->hasAttribute('type')) {
+				if ($content->getAttribute('type') == 'xhtml') {
+					return $this->doc->saveXML($content->firstChild->nextSibling);
+				}
+			}
+
+			return $content->nodeValue;
 		}
+
 	}
 
 	function get_categories() {

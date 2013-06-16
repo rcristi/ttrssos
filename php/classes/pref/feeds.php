@@ -54,12 +54,14 @@ class Pref_Feeds extends Handler_Protected {
 			$cat['type'] = 'category';
 			$cat['unread'] = 0;
 			$cat['child_unread'] = 0;
+			$cat['auxcounter'] = 0;
 
 			$cat['items'] = $this->get_category_items($line['id']);
 
-			$cat['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', count($cat['items'])), count($cat['items']));
+			$num_children = $this->calculate_children_count($cat);
+			$cat['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', $num_children), $num_children);
 
-			if (count($cat['items']) > 0 || $show_empty_cats)
+			if ($num_children > 0 || $show_empty_cats)
 				array_push($items, $cat);
 
 		}
@@ -74,6 +76,7 @@ class Pref_Feeds extends Handler_Protected {
 			$feed = array();
 			$feed['id'] = 'FEED:' . $feed_line['id'];
 			$feed['bare_id'] = (int)$feed_line['id'];
+			$feed['auxcounter'] = 0;
 			$feed['name'] = $feed_line['title'];
 			$feed['checkbox'] = false;
 			$feed['unread'] = 0;
@@ -132,6 +135,7 @@ class Pref_Feeds extends Handler_Protected {
 					$item = array();
 					$item['id'] = 'FEED:' . $feed_id;
 					$item['bare_id'] = (int)$feed_id;
+					$item['auxcounter'] = 0;
 					$item['name'] = $feed['title'];
 					$item['checkbox'] = false;
 					$item['error'] = '';
@@ -193,6 +197,7 @@ class Pref_Feeds extends Handler_Protected {
 				$cat = array();
 				$cat['id'] = 'CAT:' . $line['id'];
 				$cat['bare_id'] = (int)$line['id'];
+				$cat['auxcounter'] = 0;
 				$cat['name'] = $line['title'];
 				$cat['items'] = array();
 				$cat['checkbox'] = false;
@@ -202,9 +207,10 @@ class Pref_Feeds extends Handler_Protected {
 
 				$cat['items'] = $this->get_category_items($line['id']);
 
-				$cat['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', count($cat['items'])), count($cat['items']));
+				$num_children = $this->calculate_children_count($cat);
+				$cat['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', $num_children), $num_children);
 
-				if (count($cat['items']) > 0 || $show_empty_cats)
+				if ($num_children > 0 || $show_empty_cats)
 					array_push($root['items'], $cat);
 
 				$root['param'] += count($cat['items']);
@@ -215,6 +221,7 @@ class Pref_Feeds extends Handler_Protected {
 			$cat = array();
 			$cat['id'] = 'CAT:0';
 			$cat['bare_id'] = 0;
+			$cat['auxcounter'] = 0;
 			$cat['name'] = __("Uncategorized");
 			$cat['items'] = array();
 			$cat['type'] = 'category';
@@ -232,6 +239,7 @@ class Pref_Feeds extends Handler_Protected {
 				$feed = array();
 				$feed['id'] = 'FEED:' . $feed_line['id'];
 				$feed['bare_id'] = (int)$feed_line['id'];
+				$feed['auxcounter'] = 0;
 				$feed['name'] = $feed_line['title'];
 				$feed['checkbox'] = false;
 				$feed['error'] = $feed_line['last_error'];
@@ -249,8 +257,8 @@ class Pref_Feeds extends Handler_Protected {
 			if (count($cat['items']) > 0 || $show_empty_cats)
 				array_push($root['items'], $cat);
 
-			$root['param'] += count($cat['items']);
-			$root['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', count($cat['items'])), count($cat['items']));
+			$num_children = $this->calculate_children_count($root);
+			$root['param'] = vsprintf(_ngettext('(%d feed)', '(%d feeds)', $num_children), $num_children);
 
 		} else {
 			$feed_result = $this->dbh->query("SELECT id, title, last_error,
@@ -263,6 +271,7 @@ class Pref_Feeds extends Handler_Protected {
 				$feed = array();
 				$feed['id'] = 'FEED:' . $feed_line['id'];
 				$feed['bare_id'] = (int)$feed_line['id'];
+				$feed['auxcounter'] = 0;
 				$feed['name'] = $feed_line['title'];
 				$feed['checkbox'] = false;
 				$feed['error'] = $feed_line['last_error'];
@@ -1541,6 +1550,7 @@ class Pref_Feeds extends Handler_Protected {
 		$obj['updated'] = $updated;
 		$obj['icon'] = getFeedIcon($feed_id);
 		$obj['bare_id'] = $feed_id;
+		$obj['auxcounter'] = 0;
 
 		return $obj;
 	}
@@ -1929,6 +1939,19 @@ class Pref_Feeds extends Handler_Protected {
 			owner_uid = " . $_SESSION["uid"]);
 	}
 
+	private function calculate_children_count($cat) {
+		$c = 0;
+
+		foreach ($cat['items'] as $child) {
+			if ($child['type'] == 'category') {
+				$c += $this->calculate_children_count($child);
+			} else {
+				$c += 1;
+			}
+		}
+
+		return $c;
+	}
 
 }
 ?>

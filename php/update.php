@@ -47,7 +47,7 @@
 		<head>
 		<title>Tiny Tiny RSS data update script.</title>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-		<link rel="stylesheet" type="text/css" href="utility.css">
+		<link rel="stylesheet" type="text/css" href="css/utility.css">
 		</head>
 
 		<body>
@@ -175,7 +175,9 @@
 		}
 
 		update_daemon_common(isset($options["pidlock"]) ? 50 : DAEMON_FEED_LIMIT);
-		housekeeping_common(true);
+
+		if (!isset($options["pidlock"]) || $options["task"] == 0)
+			housekeeping_common(true);
 
 		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_UPDATE_TASK, "hook_update_task", $op);
 	}
@@ -343,10 +345,6 @@
 	}
 
 	PluginHost::getInstance()->run_commands($options);
-
-	if ($lock_handle != false) {
-		fclose($lock_handle);
-	}
 
 	if (file_exists(LOCK_DIRECTORY . "/$lock_filename"))
 		unlink(LOCK_DIRECTORY . "/$lock_filename");

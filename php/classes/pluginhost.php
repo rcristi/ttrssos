@@ -36,6 +36,7 @@ class PluginHost {
 	const HOOK_ARTICLE_LEFT_BUTTON = 19;
 	const HOOK_PREFS_EDIT_FEED = 20;
 	const HOOK_PREFS_SAVE_FEED = 21;
+	const HOOK_FETCH_FEED = 22;
 
 	const KIND_ALL = 1;
 	const KIND_SYSTEM = 2;
@@ -273,7 +274,8 @@ class PluginHost {
 			if (!isset($this->storage[$plugin]))
 				$this->storage[$plugin] = array();
 
-			$content = $this->dbh->escape_string(serialize($this->storage[$plugin]));
+			$content = $this->dbh->escape_string(serialize($this->storage[$plugin]),
+				false);
 
 			if ($this->dbh->num_rows($result) != 0) {
 				$this->dbh->query("UPDATE ttrss_plugin_storage SET content = '$content'

@@ -2,7 +2,7 @@
 <head>
 	<title>Tiny Tiny RSS - Installer</title>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-	<link rel="stylesheet" type="text/css" href="../utility.css">
+	<link rel="stylesheet" type="text/css" href="../css/utility.css">
 	<style type="text/css">
 	textarea { font-size : 12px; }
 	</style>
@@ -191,7 +191,7 @@
 			if (!$result) {
 				$query = htmlspecialchars($query);
 				if ($die_on_error) {
-					die("Query <i>$query</i> failed: " . ($link ? mysql_error($link) : "No connection"));
+					die("Query <i>$query</i> failed: " . ($link ? function_exists("mysqli_connect") ? mysqli_error($link) : mysql_error($link) : "No connection"));
 				}
 			}
 			return $result;
@@ -357,7 +357,7 @@
 			<p>Before you can start using tt-rss, database needs to be initialized. Click on the button below to do that now.</p>
 
 			<?php
-				$result = db_query($link, "SELECT true FROM ttrss_feeds", $DB_TYPE, false);
+				$result = @db_query($link, "SELECT true FROM ttrss_feeds", $DB_TYPE, false);
 
 				if ($result) {
 					print_error("Existing tt-rss tables will be removed from the database. If you would like to keep your data, skip database initialization.");
@@ -406,7 +406,7 @@
 
 		} else if ($op == 'installschema' || $op == 'skipschema') {
 
-			$link = db_connect($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $DB_TYPE);
+			$link = db_connect($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $DB_TYPE, $DB_PORT);
 
 			if (!$link) {
 				print_error("Unable to connect to database using specified parameters.");

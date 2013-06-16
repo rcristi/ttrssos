@@ -561,7 +561,7 @@ class Feeds extends Handler_Protected {
 						target=\"_blank\" href=\"".
 						htmlspecialchars($line["link"])."\">".
 						$line["title"] .
-						" <span class=\"author\">$entry_author</span></a>";
+						"</a> <span class=\"author\">$entry_author</span>";
 
 					$reply['content'] .= $labels_str;
 
@@ -593,7 +593,7 @@ class Feeds extends Handler_Protected {
 					$reply['content'] .= "<span class='updated' title='$date_entered_fmt'>
 						$updated_fmt</span>";
 
-					$reply['content'] .= "<div style=\"vertical-align : middle\">";
+					$reply['content'] .= "<div class='scoreWrap' style=\"vertical-align : middle\">";
 					$reply['content'] .= "$score_pic";
 
 					if (!get_pref("VFEED_GROUP_BY_FEED") && $line["feed_title"]) {

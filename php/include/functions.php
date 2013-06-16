@@ -1,6 +1,6 @@
 <?php
 	define('EXPECTED_CONFIG_VERSION', 26);
-	define('SCHEMA_VERSION', 120);
+	define('SCHEMA_VERSION', 121);
 
 	define('LABEL_BASE_INDEX', -1024);
 	define('PLUGIN_FEED_BASE_INDEX', -128);
@@ -100,7 +100,7 @@
 		if ($_SESSION["uid"] && get_schema_version() >= 120) {
 			$pref_lang = get_pref("USER_LANGUAGE", $_SESSION["uid"]);
 
-			if ($pref_lang) {
+			if ($pref_lang && $pref_lang != 'auto') {
 				$lang = $pref_lang;
 			}
 		}
@@ -317,7 +317,12 @@
 			$fetch_curl_used = true;
 
 			if (ini_get("safe_mode") || ini_get("open_basedir")) {
-				$ch = curl_init(geturl($url));
+				$new_url = geturl($url);
+				if (!$new_url) {
+				    // geturl has already populated $fetch_last_error
+				    return false;
+				}
+				$ch = curl_init($new_url);
 			} else {
 				$ch = curl_init($url);
 			}
@@ -961,27 +966,43 @@
 	}
 
 	function file_is_locked($filename) {
-		if (function_exists('flock')) {
-			$fp = @fopen(LOCK_DIRECTORY . "/$filename", "r");
-			if ($fp) {
-				if (flock($fp, LOCK_EX | LOCK_NB)) {
-					flock($fp, LOCK_UN);
+		if (file_exists(LOCK_DIRECTORY . "/$filename")) {
+			if (function_exists('flock')) {
+				$fp = @fopen(LOCK_DIRECTORY . "/$filename", "r");
+				if ($fp) {
+					if (flock($fp, LOCK_EX | LOCK_NB)) {
+						flock($fp, LOCK_UN);
+						fclose($fp);
+						return false;
+					}
 					fclose($fp);
+					return true;
+				} else {
 					return false;
 				}
-				fclose($fp);
-				return true;
-			} else {
-				return false;
 			}
+			return true; // consider the file always locked and skip the test
+		} else {
+			return false;
 		}
-		return true; // consider the file always locked and skip the test
 	}
+
 
 	function make_lockfile($filename) {
 		$fp = fopen(LOCK_DIRECTORY . "/$filename", "w");
 
 		if ($fp && flock($fp, LOCK_EX | LOCK_NB)) {
+			$stat_h = fstat($fp);
+			$stat_f = stat(LOCK_DIRECTORY . "/$filename");
+
+			if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+				if ($stat_h["ino"] != $stat_f["ino"] ||
+						$stat_h["dev"] != $stat_f["dev"]) {
+
+					return false;
+				}
+			}
+
 			if (function_exists('posix_getpid')) {
 				fwrite($fp, posix_getpid() . "\n");
 			}
@@ -1459,8 +1480,14 @@
 
 			$count = getFeedUnread($i);
 
+			if ($i == 0 || $i == -1 || $i == -2)
+				$auxctr = getFeedArticles($i, false);
+			else
+				$auxctr = 0;
+
 			$cv = array("id" => $i,
-				"counter" => (int) $count);
+				"counter" => (int) $count,
+				"auxcounter" => $auxctr);
 
 //			if (get_pref('EXTENDED_FEEDLIST'))
 //				$cv["xmsg"] = getFeedArticles($i)." ".__("total");
@@ -1487,11 +1514,13 @@
 
 		$owner_uid = $_SESSION["uid"];
 
-		$result = db_query("SELECT id,caption,COUNT(unread) AS unread
+		$result = db_query("SELECT id,caption,COUNT(u1.unread) AS unread,COUNT(u2.unread) AS total
 			FROM ttrss_labels2 LEFT JOIN ttrss_user_labels2 ON
 				(ttrss_labels2.id = label_id)
-				LEFT JOIN ttrss_user_entries ON (ref_id = article_id AND unread = true
-					AND ttrss_user_entries.owner_uid = $owner_uid)
+				LEFT JOIN ttrss_user_entries AS u1 ON (u1.ref_id = article_id AND u1.unread = true
+					AND u1.owner_uid = $owner_uid)
+				LEFT JOIN ttrss_user_entries AS u2 ON (u2.ref_id = article_id AND u2.unread = false
+					AND u2.owner_uid = $owner_uid)
 				WHERE ttrss_labels2.owner_uid = $owner_uid GROUP BY ttrss_labels2.id,
 					ttrss_labels2.caption");
 
@@ -1499,17 +1528,12 @@
 
 			$id = label_to_feed_id($line["id"]);
 
-			$label_name = $line["caption"];
-			$count = $line["unread"];
-
 			$cv = array("id" => $id,
-				"counter" => (int) $count);
+				"counter" => (int) $line["unread"],
+				"auxcounter" => (int) $line["total"]);
 
 			if ($descriptions)
-				$cv["description"] = $label_name;
-
-//			if (get_pref('EXTENDED_FEEDLIST'))
-//				$cv["xmsg"] = getFeedArticles($id)." ".__("total");
+				$cv["description"] = $line["caption"];
 
 			array_push($ret_arr, $cv);
 		}
@@ -2328,8 +2352,10 @@
 				$filter_query_part = filter_to_sql($filter, $owner_uid);
 
 				// Try to check if SQL regexp implementation chokes on a valid regexp
+
+
 				$result = db_query("SELECT true AS true_val FROM ttrss_entries,
-					ttrss_user_entries, ttrss_feeds, ttrss_feed_categories
+					ttrss_user_entries, ttrss_feeds
 					WHERE $filter_query_part LIMIT 1", false);
 
 				if ($result) {
@@ -3091,7 +3117,9 @@
 			$line["tags"] = get_article_tags($id, $owner_uid, $line["tag_cache"]);
 			unset($line["tag_cache"]);
 
-			$line["content"] = sanitize($line["content"], false, $owner_uid,	$line["site_url"]);
+			$line["content"] = sanitize($line["content"],
+				sql_bool_to_bool($line['hide_images']),
+				$owner_uid, $line["site_url"]);
 
 			foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_RENDER_ARTICLE) as $p) {
 				$line = $p->hook_render_article($line);
@@ -3118,7 +3146,7 @@
 				$rv['content'] .= "<html><head>
 						<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>
 						<title>Tiny Tiny RSS - ".$line["title"]."</title>
-						<link rel=\"stylesheet\" type=\"text/css\" href=\"tt-rss.css\">
+						<link rel=\"stylesheet\" type=\"text/css\" href=\"css/tt-rss.css\">
 					</head><body id=\"ttrssZoom\">";
 			}
 
@@ -3397,7 +3425,7 @@
 			$maxtags = min(5, count($tags));
 
 			for ($i = 0; $i < $maxtags; $i++) {
-				$tags_str .= "<a class=\"tag\" href=\"#\" onclick=\"viewfeed('".$tags[$i]."'\")>" . $tags[$i] . "</a>, ";
+				$tags_str .= "<a class=\"tag\" href=\"#\" onclick=\"viewfeed('".$tags[$i]."')\">" . $tags[$i] . "</a>, ";
 			}
 
 			$tags_str = mb_substr($tags_str, 0, mb_strlen($tags_str)-2);
@@ -3794,7 +3822,7 @@
 
 		$sphinxpair = explode(":", SPHINX_SERVER, 2);
 
-		$sphinxClient->SetServer($sphinxpair[0], $sphinxpair[1]);
+		$sphinxClient->SetServer($sphinxpair[0], (int)$sphinxpair[1]);
 		$sphinxClient->SetConnectTimeout(1);
 
 		$sphinxClient->SetFieldWeights(array('title' => 70, 'content' => 30,
@@ -4086,14 +4114,15 @@
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 		//curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true); //CURLOPT_FOLLOWLOCATION Disabled...
 		curl_setopt($curl, CURLOPT_TIMEOUT, 60);
+		curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
 		$html = curl_exec($curl);
 
 		$status = curl_getinfo($curl);
-		curl_close($curl);
 
 		if($status['http_code']!=200){
 			if($status['http_code'] == 301 || $status['http_code'] == 302) {
+				curl_close($curl);
 				list($header) = explode("\r\n\r\n", $html, 2);
 				$matches = array();
 				preg_match("/(Location:|URI:)[^(\n)]*/", $header, $matches);
@@ -4101,6 +4130,12 @@
 				$url_parsed = parse_url($url);
 				return (isset($url_parsed))? geturl($url):'';
 			}
+
+			global $fetch_last_error;
+
+			$fetch_last_error = curl_errno($curl) . " " . curl_error($curl);
+			curl_close($curl);
+
 			$oline='';
 			foreach($status as $key=>$eline){$oline.='['.$key.']'.$eline.' ';}
 			$line =$oline." \r\n ".$url."\r\n-----------------\r\n";
@@ -4108,6 +4143,7 @@
 #			fwrite($handle, $line);
 			return FALSE;
 		}
+		curl_close($curl);
 		return $url;
 	}
 
@@ -4118,7 +4154,7 @@
 
 		foreach ($files as $js) {
 			if (!isset($_GET['debug'])) {
-				$cached_file = CACHE_DIR . "/js/$js.js";
+				$cached_file = CACHE_DIR . "/js/".basename($js).".js";
 
 				if (file_exists($cached_file) &&
 						is_readable($cached_file) &&
@@ -4161,7 +4197,7 @@
 	}
 
 	function calculate_dep_timestamp() {
-		$files = array_merge(glob("js/*.js"), glob("*.css"));
+		$files = array_merge(glob("js/*.js"), glob("css/*.css"));
 
 		$max_ts = -1;
 
