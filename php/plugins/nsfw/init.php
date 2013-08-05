@@ -1,7 +1,5 @@
 <?php
 class NSFW extends Plugin {
-
-	private $link;
 	private $host;
 
 	function about() {
@@ -12,7 +10,6 @@ class NSFW extends Plugin {
 	}
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_RENDER_ARTICLE, $this);
@@ -26,9 +23,10 @@ class NSFW extends Plugin {
 	}
 
 	function hook_render_article($article) {
-		$tags = array_map("trim", explode(", ", $this->host->get($this, "tags")));
+		$tags = array_map("trim", explode(",", $this->host->get($this, "tags")));
+		$a_tags = array_map("trim", explode(",", $article["tag_cache"]));
 
-		if (count(array_intersect($tags, $article["tags"])) > 0) {
+		if (count(array_intersect($tags, $a_tags)) > 0) {
 			$article["content"] = "<div class='nswf wrapper'><button onclick=\"nsfwShow(this)\">".__("Not work safe (click to toggle)")."</button>
 				<div class='nswf content' style='display : none'>".$article["content"]."</div></div>";
 		}
@@ -37,9 +35,10 @@ class NSFW extends Plugin {
 	}
 
 	function hook_render_article_cdm($article) {
-		$tags = array_map("trim", explode(", ", $this->host->get($this, "tags")));
+		$tags = array_map("trim", explode(",", $this->host->get($this, "tags")));
+		$a_tags = array_map("trim", explode(",", $article["tag_cache"]));
 
-		if (count(array_intersect($tags, $article["tags"])) > 0) {
+		if (count(array_intersect($tags, $a_tags)) > 0) {
 			$article["content"] = "<div class='nswf wrapper'><button onclick=\"nsfwShow(this)\">".__("Not work safe (click to toggle)")."</button>
 				<div class='nswf content' style='display : none'>".$article["content"]."</div></div>";
 		}
@@ -99,6 +98,10 @@ class NSFW extends Plugin {
 		$this->host->set($this, "tags", $tags);
 
 		echo __("Configuration saved.");
+	}
+
+	function api_version() {
+		return 2;
 	}
 
 }
