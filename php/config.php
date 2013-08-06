@@ -96,11 +96,11 @@
 
 	// *** PubSubHubbub settings ***
 
-	define('PUBSUBHUBBUB_HUB', '');
+	define('PUBSUBHUBBUB_HUB', 'http://pubsubhubbub.appspot.com/');
 	// URL to a PubSubHubbub-compatible hub server. If defined, "Published
 	// articles" generated feed would automatically become PUSH-enabled.
 
-	define('PUBSUBHUBBUB_ENABLED', false);
+	define('PUBSUBHUBBUB_ENABLED', true);
 	// Enable client PubSubHubbub support in tt-rss. When disabled, tt-rss
 	// won't try to subscribe to PUSH feed updates.
 
