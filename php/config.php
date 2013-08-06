@@ -8,7 +8,7 @@
 	define('DB_USER', getenv('OPENSHIFT_POSTGRESQL_DB_USERNAME'));
 	define('DB_NAME', getenv('OPENSHIFT_APP_NAME'));
 	define('DB_PASS', getenv('OPENSHIFT_POSTGRESQL_DB_PASSWORD'));
-	define('DB_PORT', getenv('OPENSHIFT_POSTGRESQL_DB_PORT')); // when neeeded, PG-only
+	define('DB_PORT', getenv('OPENSHIFT_POSTGRESQL_DB_PORT')); // usually 5432 for PostgreSQL, 3306 for MySQL
 
 	define('MYSQL_CHARSET', 'UTF8');
 	// Connection charset for MySQL. If you have a legacy database and/or experience
@@ -145,10 +145,6 @@
 	// Default lifetime of a session (e.g. login) cookie. In seconds, 
 	// 0 means cookie will be deleted when browser closes.
 
-	define('SESSION_EXPIRE_TIME', 86400);
-	// Hard expiration limit for sessions. Should be
-	// greater or equal to SESSION_COOKIE_LIFETIME
-
 	define('SESSION_CHECK_ADDRESS', 1);
 	// Check client IP address when validating session:
 	// 0 - disable checking
@@ -196,7 +192,6 @@
 	// after login, or content encoding errors, disable it.
 
 	define('PLUGINS', 'auth_internal, note');
-	// Comma-separated list of plugins to load automatically for all users.
 	// System plugins have to be specified here. Please enable at least one
 	// authentication plugin here (auth_*).
 	// Users may enable other user plugins from Preferences/Plugins but may not
