@@ -11,11 +11,15 @@
 	chdir("..");
 
 	define('TTRSS_SESSION_NAME', 'ttrss_api_sid');
+	define('NO_SESSION_AUTOSTART', true);
 
+	require_once "autoload.php";
 	require_once "db.php";
 	require_once "db-prefs.php";
 	require_once "functions.php";
 	require_once "sessions.php";
+
+	ini_set("session.gc_maxlifetime", 86400);
 
 	define('AUTH_DISABLE_OTP', true);
 
@@ -26,8 +30,6 @@
 	} else {
 		ob_start();
 	}
-
-	$link = db_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 
 	$input = file_get_contents("php://input");
 
@@ -46,15 +48,16 @@
 
 	if ($_REQUEST["sid"]) {
 		session_id($_REQUEST["sid"]);
+		@session_start();
+	} else if (defined('_API_DEBUG_HTTP_ENABLED')) {
+		@session_start();
 	}
 
-	@session_start();
-
-	if (!init_connection($link)) return;
+	if (!init_plugins()) return;
 
 	$method = strtolower($_REQUEST["op"]);
 
-	$handler = new API($link, $_REQUEST);
+	$handler = new API($_REQUEST);
 
 	if ($handler->before($method)) {
 		if ($method && method_exists($handler, $method)) {
@@ -64,8 +67,6 @@
 		}
 		$handler->after();
 	}
-
-	db_close($link);
 
 	header("Api-Content-Length: " . ob_get_length());
 

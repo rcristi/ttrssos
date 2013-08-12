@@ -1,7 +1,6 @@
 <?php
 class Af_Buttersafe extends Plugin {
 
-	private $link;
 	private $host;
 
 	function about() {
@@ -11,7 +10,6 @@ class Af_Buttersafe extends Plugin {
 	}
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_ARTICLE_FILTER, $this);
@@ -44,7 +42,7 @@ class Af_Buttersafe extends Plugin {
 					}
 
 					if ($basenode) {
-						$article["content"] = $doc->saveXML($basenode, LIBXML_NOEMPTYTAG);
+						$article["content"] = $doc->saveXML($basenode);
 						$article["plugin_data"] = "buttersafe,$owner_uid:" . $article["plugin_data"];
 					}
 				}
@@ -55,5 +53,10 @@ class Af_Buttersafe extends Plugin {
 
 		return $article;
 	}
+
+	function api_version() {
+		return 2;
+	}
+
 }
 ?>

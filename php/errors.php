@@ -12,7 +12,7 @@
 	$ERRORS[2] = __("This program requires cookies " .
 			"to function properly. Your browser doesn't seem to support them.");
 
-	$ERRORS[3] = __("Backend sanity check failed");
+	$ERRORS[3] = __("Backend sanity check failed.");
 
 	$ERRORS[4] = __("Frontend sanity check failed.");
 
@@ -28,15 +28,14 @@
 
 	$ERRORS[9] = __("Configuration check failed");
 
-	$ERRORS[10] = __("Your version of MySQL is not currently supported. Please see
-		official site for more information.");
+	$ERRORS[10] = __("Your version of MySQL is not currently supported. Please see official site for more information.");
 
 	$ERRORS[11] = "[This error is not returned by server]";
 
 	$ERRORS[12] = __("SQL escaping test failed, check your database and PHP configuration");
 
 	if ($_REQUEST['mode'] == 'js') {
-		header("Content-Type: text/plain; charset=UTF-8");
+		header("Content-Type: text/javascript; charset=UTF-8");
 
 		print "var ERRORS = [];\n";
 

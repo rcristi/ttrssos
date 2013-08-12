@@ -83,17 +83,34 @@ function addUser() {
 function editUser(id, event) {
 
 	try {
-		notify_progress("Loading, please wait...");
-
-		var query = "?op=pref-users&method=edit&id=" +
+		var query = "backend.php?op=pref-users&method=edit&id=" +
 			param_escape(id);
 
-		new Ajax.Request("backend.php",	{
-			parameters: query,
-			onComplete: function(transport) {
-					infobox_callback2(transport);
-					document.forms['user_edit_form'].login.focus();
-				} });
+		if (dijit.byId("userEditDlg"))
+			dijit.byId("userEditDlg").destroyRecursive();
+
+		dialog = new dijit.Dialog({
+			id: "userEditDlg",
+			title: __("User Editor"),
+			style: "width: 600px",
+			execute: function() {
+				if (this.validate()) {
+
+					notify_progress("Saving data...", true);
+
+					var query = dojo.formToQuery("user_edit_form");
+
+					new Ajax.Request("backend.php", {
+						parameters: query,
+						onComplete: function(transport) {
+							dialog.hide();
+							updateUsersList();
+						}});
+				}
+			},
+			href: query});
+
+		dialog.show();
 
 	} catch (e) {
 		exception_error("editUser", e);
@@ -463,43 +480,6 @@ function purgeSelectedFeeds() {
 	return false;
 }
 
-function userEditCancel() {
-	closeInfoBox();
-	return false;
-}
-
-function userEditSave() {
-
-	try {
-
-		var login = document.forms["user_edit_form"].login.value;
-
-		if (login.length == 0) {
-			alert(__("Login field cannot be blank."));
-			return;
-		}
-
-		notify_progress("Saving user...");
-
-		closeInfoBox();
-
-		var query = Form.serialize("user_edit_form");
-
-		new Ajax.Request("backend.php", {
-			parameters: query,
-			onComplete: function(transport) {
-				updateUsersList();
-			} });
-
-	} catch (e) {
-		exception_error("userEditSave", e);
-	}
-
-	return false;
-
-}
-
-
 function editSelectedUser() {
 	var rows = getSelectedUsers();
 
@@ -547,7 +527,7 @@ function resetSelectedUserPass() {
 			new Ajax.Request("backend.php", {
 				parameters: query,
 				onComplete: function(transport) {
-					notify_info(transport.responseText);
+					notify_info(transport.responseText, true);
 				} });
 
 		}
@@ -573,17 +553,24 @@ function selectedUserDetails() {
 			return;
 		}
 
-		notify_progress("Loading, please wait...");
-
 		var id = rows[0];
 
-		var query = "?op=pref-users&method=userdetails&id=" + id;
+		var query = "backend.php?op=pref-users&method=userdetails&id=" + id;
 
-		new Ajax.Request("backend.php",	{
-			parameters: query,
-			onComplete: function(transport) {
-					infobox_callback2(transport);
-				} });
+		if (dijit.byId("userDetailsDlg"))
+			dijit.byId("userDetailsDlg").destroyRecursive();
+
+		dialog = new dijit.Dialog({
+			id: "userDetailsDlg",
+			title: __("User details"),
+			style: "width: 600px",
+			execute: function() {
+				dialog.hide();
+			},
+			href: query});
+
+		dialog.show();
+
 	} catch (e) {
 		exception_error("selectedUserDetails", e);
 	}
@@ -722,6 +709,13 @@ function editSelectedFeeds() {
 								}
 							} catch (e) { }
 
+							try {
+								if (!query.match("&hide_images=") &&
+										this.getChildByName('hide_images').attr('disabled') == false) {
+									query = query + "&hide_images=false";
+								}
+							} catch (e) { }
+
 							if (!query.match("&include_in_digest=") &&
 									this.getChildByName('include_in_digest').attr('disabled') == false) {
 								query = query + "&include_in_digest=false";
@@ -757,18 +751,6 @@ function editSelectedFeeds() {
 
 	} catch (e) {
 		exception_error("editSelectedFeeds", e);
-	}
-}
-
-function piggie(enable) {
-	if (enable) {
-		console.log("I LOVEDED IT!");
-		var piggie = $("piggie");
-
-		Element.show(piggie);
-		Position.Center(piggie);
-		Effect.Puff(piggie);
-
 	}
 }
 
@@ -857,6 +839,15 @@ function updatePrefsList() {
 		} });
 }
 
+function updateSystemList() {
+	new Ajax.Request("backend.php", {
+		parameters: "?op=pref-system",
+		onComplete: function(transport) {
+			dijit.byId('systemConfigTab').attr('content', transport.responseText);
+			notify("");
+		} });
+}
+
 function selectTab(id, noupdate, method) {
 	try {
 		if (!noupdate) {
@@ -872,6 +863,8 @@ function selectTab(id, noupdate, method) {
 				updatePrefsList();
 			} else if (id == "userConfig") {
 				updateUsersList();
+			} else if (id == "systemConfig") {
+				updateSystemList();
 			}
 
 			var tab = dijit.byId(id + "Tab");
@@ -956,8 +949,11 @@ function init() {
 		dojo.addOnLoad(function() {
 			loading_set_progress(50);
 
+			var clientTzOffset = new Date().getTimezoneOffset() * 60;
+
 			new Ajax.Request("backend.php", {
-				parameters: {op: "rpc", method: "sanityCheck"},
+				parameters: {op: "rpc", method: "sanityCheck",
+				 	clientTzOffset: clientTzOffset },
 					onComplete: function(transport) {
 					backend_sanity_check_callback(transport);
 				} });
@@ -980,13 +976,8 @@ function validatePrefsReset() {
 			new Ajax.Request("backend.php", {
 				parameters: query,
 				onComplete: function(transport) {
-					var msg = transport.responseText;
-					if (msg.match("PREFS_THEME_CHANGED")) {
-						window.location.reload();
-					} else {
-						notify_info(msg);
-						selectTab();
-					}
+					updatePrefsList();
+					notify_info(transport.responseText);
 				} });
 
 		}
@@ -1226,7 +1217,7 @@ function opmlRegenKey() {
 
 			notify_progress("Trying to change address...", true);
 
-			var query = "?op=rpc&method=regenOPMLKey";
+			var query = "?op=pref-feeds&method=regenOPMLKey";
 
 			new Ajax.Request("backend.php", {
 				parameters: query,
@@ -1405,7 +1396,7 @@ function editProfiles() {
 		if (dijit.byId("profileEditDlg"))
 			dijit.byId("profileEditDlg").destroyRecursive();
 
-		var query = "backend.php?op=dlg&method=editPrefProfiles";
+		var query = "backend.php?op=pref-prefs&method=editPrefProfiles";
 
 		dialog = new dijit.Dialog({
 			id: "profileEditDlg",
@@ -1526,7 +1517,7 @@ function clearFeedAccessKeys() {
 	if (ok) {
 		notify_progress("Clearing URLs...");
 
-		var query = "?op=rpc&method=clearKeys";
+		var query = "?op=pref-feeds&method=clearKeys";
 
 		new Ajax.Request("backend.php", {
 			parameters: query,
@@ -1538,24 +1529,23 @@ function clearFeedAccessKeys() {
 	return false;
 }
 
-function clearArticleAccessKeys() {
-
-	var ok = confirm(__("This will invalidate all previously shared article URLs. Continue?"));
-
-	if (ok) {
-		notify_progress("Clearing URLs...");
-
-		var query = "?op=rpc&method=clearArticleKeys";
+function resetFilterOrder() {
+	try {
+		notify_progress("Loading, please wait...");
 
 		new Ajax.Request("backend.php", {
-			parameters: query,
+			parameters: "?op=pref-filters&method=filtersortreset",
 			onComplete: function(transport) {
-				notify_info("Shared URLs cleared.");
+		  		updateFilterList();
 			} });
-	}
 
-	return false;
+
+	} catch (e) {
+		exception_error("resetFilterOrder");
+	}
 }
+
+
 function resetFeedOrder() {
 	try {
 		notify_progress("Loading, please wait...");
@@ -1585,21 +1575,6 @@ function resetCatOrder() {
 
 	} catch (e) {
 		exception_error("resetCatOrder");
-	}
-}
-
-function toggleHiddenFeedCats() {
-	try {
-		notify_progress("Loading, please wait...");
-
-		new Ajax.Request("backend.php", {
-			parameters: "?op=pref-feeds&method=togglehiddenfeedcats",
-			onComplete: function(transport) {
-		  		updateFeedList();
-			} });
-
-	} catch (e) {
-		exception_error("toggleHiddenFeedCats");
 	}
 }
 
@@ -1699,31 +1674,10 @@ function editLabel(id, event) {
 	}
 }
 
-function clearTwitterCredentials() {
-	try {
-		var ok = confirm(__("This will clear your stored authentication information for Twitter. Continue?"));
-
-		if (ok) {
-			notify_progress("Clearing credentials...");
-
-			var query = "?op=pref-feeds&method=remtwitterinfo";
-
-			new Ajax.Request("backend.php", {
-				parameters: query,
-				onComplete: function(transport) {
-					notify_info("Twitter credentials have been cleared.");
-					updateFeedList();
-				} });
-		}
-
-	} catch (e) {
-		exception_error("clearTwitterCredentials", e);
-	}
-}
 
 function customizeCSS() {
 	try {
-		var query = "backend.php?op=dlg&method=customizeCSS";
+		var query = "backend.php?op=pref-prefs&method=customizeCSS";
 
 		if (dijit.byId("cssEditDlg"))
 			dijit.byId("cssEditDlg").destroyRecursive();
@@ -1767,7 +1721,7 @@ function gotoExportOpml(filename, settings) {
 
 function batchSubscribe() {
 	try {
-		var query = "backend.php?op=dlg&method=batchSubscribe";
+		var query = "backend.php?op=pref-feeds&method=batchSubscribe";
 
 		// overlapping widgets
 		if (dijit.byId("batchSubDlg")) dijit.byId("batchSubDlg").destroyRecursive();
@@ -1832,3 +1786,21 @@ function clearPluginData(name) {
 		exception_error("clearPluginData", e);
 	}
 }
+
+function clearSqlLog() {
+
+	if (confirm(__("Clear all messages in the error log?"))) {
+
+		notify_progress("Loading, please wait...");
+		var query = "?op=pref-system&method=clearLog";
+
+		new Ajax.Request("backend.php",	{
+			parameters: query,
+			onComplete: function(transport) {
+				updateSystemList();
+			} });
+
+	}
+}
+
+

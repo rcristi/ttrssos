@@ -1,15 +1,12 @@
 <?php
 class Import_Export extends Plugin implements IHandler {
-
-	private $link;
 	private $host;
 
 	function init($host) {
-		$this->link = $host->get_link();
 		$this->host = $host;
 
 		$host->add_hook($host::HOOK_PREFS_TAB, $this);
-		$host->add_command("xml-import", "USER FILE: import articles from XML", $this);
+		$host->add_command("xml-import", "import articles from XML", $this, ":", "FILE");
 	}
 
 	function about() {
@@ -19,24 +16,21 @@ class Import_Export extends Plugin implements IHandler {
 	}
 
 	function xml_import($args) {
-		array_shift($args);
 
-		$username = $args[count($args) - 2];
-		$filename = $args[count($args) - 1];
-
-		if (!$username) {
-			print "error: please specify username.\n";
-			return;
-		}
+		$filename = $args['xml_import'];
 
 		if (!is_file($filename)) {
 			print "error: input filename ($filename) doesn't exist.\n";
 			return;
 		}
 
+		_debug("please enter your username:");
+
+		$username = db_escape_string(trim(read_stdin()));
+
 		_debug("importing $filename for user $username...\n");
 
-		$result = db_query($this->link, "SELECT id FROM ttrss_users WHERE login = '$username'");
+		$result = db_query("SELECT id FROM ttrss_users WHERE login = '$username'");
 
 		if (db_num_rows($result) == 0) {
 			print "error: could not find user $username.\n";
@@ -45,7 +39,7 @@ class Import_Export extends Plugin implements IHandler {
 
 		$owner_uid = db_fetch_result($result, 0, "id");
 
-		$this->perform_data_import($this->link, $filename, $owner_uid);
+		$this->perform_data_import($filename, $owner_uid);
 	}
 
 	function save() {
@@ -63,9 +57,9 @@ class Import_Export extends Plugin implements IHandler {
 
 		print "<div dojoType=\"dijit.layout.AccordionPane\" title=\"".__('Import and export')."\">";
 
-		print "<h3>" . __("Article archive") . "</h3>";
+		print_notice(__("You can export and import your Starred and Archived articles for safekeeping or when migrating between tt-rss instances of same version."));
 
-		print "<p>" . __("You can export and import your Starred and Archived articles for safekeeping or when migrating between tt-rss instances.") . "</p>";
+		print "<p>";
 
 		print "<button dojoType=\"dijit.form.Button\" onclick=\"return exportData()\">".
 			__('Export my data')."</button> ";
@@ -86,6 +80,9 @@ class Import_Export extends Plugin implements IHandler {
 			<button dojoType=\"dijit.form.Button\" onclick=\"return importData();\" type=\"submit\">" .
 			__('Import') . "</button>";
 
+		print "</form>";
+
+		print "</p>";
 
 		print "</div>"; # pane
 	}
@@ -127,7 +124,7 @@ class Import_Export extends Plugin implements IHandler {
 		$limit = 250;
 
 		if ($offset < 10000 && is_writable(CACHE_DIR . "/export")) {
-			$result = db_query($this->link, "SELECT
+			$result = db_query("SELECT
 					ttrss_entries.guid,
 					ttrss_entries.title,
 					content,
@@ -165,6 +162,7 @@ class Import_Export extends Plugin implements IHandler {
 					fputs($fp, "<article>");
 
 					foreach ($line as $k => $v) {
+						$v = str_replace("]]>", "]]]]><![CDATA[>", $v);
 						fputs($fp, "<$k><![CDATA[$v]]></$k>");
 					}
 
@@ -185,7 +183,7 @@ class Import_Export extends Plugin implements IHandler {
 		print json_encode(array("exported" => $exported));
 	}
 
-	function perform_data_import($link, $filename, $owner_uid) {
+	function perform_data_import($filename, $owner_uid) {
 
 		$num_imported = 0;
 		$num_processed = 0;
@@ -249,16 +247,16 @@ class Import_Export extends Plugin implements IHandler {
 
 						++$num_processed;
 
-						//db_query($link, "BEGIN");
+						//db_query("BEGIN");
 
 						//print 'GUID:' . $article['guid'] . "\n";
 
-						$result = db_query($link, "SELECT id FROM ttrss_entries
+						$result = db_query("SELECT id FROM ttrss_entries
 							WHERE guid = '".$article['guid']."'");
 
 						if (db_num_rows($result) == 0) {
 
-							$result = db_query($link,
+							$result = db_query(
 								"INSERT INTO ttrss_entries
 									(title,
 									guid,
@@ -286,7 +284,7 @@ class Import_Export extends Plugin implements IHandler {
 									'0',
 									'')");
 
-							$result = db_query($link, "SELECT id FROM ttrss_entries
+							$result = db_query("SELECT id FROM ttrss_entries
 								WHERE guid = '".$article['guid']."'");
 
 							if (db_num_rows($result) != 0) {
@@ -307,7 +305,7 @@ class Import_Export extends Plugin implements IHandler {
 							$feed = 'NULL';
 
 							if ($feed_url && $feed_title) {
-								$result = db_query($link, "SELECT id FROM ttrss_feeds
+								$result = db_query("SELECT id FROM ttrss_feeds
 									WHERE feed_url = '$feed_url' AND owner_uid = '$owner_uid'");
 
 								if (db_num_rows($result) != 0) {
@@ -315,10 +313,10 @@ class Import_Export extends Plugin implements IHandler {
 								} else {
 									// try autocreating feed in Uncategorized...
 
-									$result = db_query($link, "INSERT INTO ttrss_feeds (owner_uid,
+									$result = db_query("INSERT INTO ttrss_feeds (owner_uid,
 										feed_url, title) VALUES ($owner_uid, '$feed_url', '$feed_title')");
 
-									$result = db_query($link, "SELECT id FROM ttrss_feeds
+									$result = db_query("SELECT id FROM ttrss_feeds
 										WHERE feed_url = '$feed_url' AND owner_uid = '$owner_uid'");
 
 									if (db_num_rows($result) != 0) {
@@ -336,7 +334,7 @@ class Import_Export extends Plugin implements IHandler {
 
 							//print "$ref_id / $feed / " . $article['title'] . "\n";
 
-							$result = db_query($link, "SELECT int_id FROM ttrss_user_entries
+							$result = db_query("SELECT int_id FROM ttrss_user_entries
 								WHERE ref_id = '$ref_id' AND owner_uid = '$owner_uid' AND $feed_qpart");
 
 							if (db_num_rows($result) == 0) {
@@ -353,7 +351,7 @@ class Import_Export extends Plugin implements IHandler {
 
 								++$num_imported;
 
-								$result = db_query($link,
+								$result = db_query(
 									"INSERT INTO ttrss_user_entries
 									(ref_id, owner_uid, feed_id, unread, last_read, marked,
 										published, score, tag_cache, label_cache, uuid, note)
@@ -366,15 +364,15 @@ class Import_Export extends Plugin implements IHandler {
 								if (is_array($label_cache) && $label_cache["no-labels"] != 1) {
 									foreach ($label_cache as $label) {
 
-										label_create($link, $label[1],
+										label_create($label[1],
 											$label[2], $label[3], $owner_uid);
 
-										label_add_article($link, $ref_id, $label[1], $owner_uid);
+										label_add_article($ref_id, $label[1], $owner_uid);
 
 									}
 								}
 
-								//db_query($link, "COMMIT");
+								//db_query("COMMIT");
 							}
 						}
 					}
@@ -382,8 +380,10 @@ class Import_Export extends Plugin implements IHandler {
 			}
 
 			print "<p>" .
-				T_sprintf("Finished: %d articles processed, %d imported, %d feeds created.",
-					$num_processed, $num_imported, $num_feeds_created) .
+				__("Finished: ").
+				vsprintf(ngettext("%d article processed, ", "%d articles processed, ", $num_processed), $num_processed).
+				vsprintf(ngettext("%d imported, ", "%d imported, ", $num_imported), $num_imported).
+				vsprintf(ngettext("%d feed created.", "%d feeds created.", $num_feeds_created), $num_feeds_created).
 					"</p>";
 
 		} else {
@@ -416,14 +416,35 @@ class Import_Export extends Plugin implements IHandler {
 
 		print "<div style='text-align : center'>";
 
-		if (is_file($_FILES['export_file']['tmp_name'])) {
+		if ($_FILES['export_file']['error'] != 0) {
+			print_error(T_sprintf("Upload failed with error code %d",
+				$_FILES['export_file']['error']));
+			return;
+		}
 
-			$this->perform_data_import($this->link, $_FILES['export_file']['tmp_name'], $_SESSION['uid']);
+		$tmp_file = false;
 
+		if (is_uploaded_file($_FILES['export_file']['tmp_name'])) {
+			$tmp_file = tempnam(CACHE_DIR . '/upload', 'export');
+
+			$result = move_uploaded_file($_FILES['export_file']['tmp_name'],
+				$tmp_file);
+
+			if (!$result) {
+				print_error(__("Unable to move uploaded file."));
+				return;
+			}
 		} else {
-			print "<p>" . T_sprintf("Could not upload file. You might need to adjust upload_max_filesize
-				in PHP.ini (current value = %s)", ini_get("upload_max_filesize")) . " or use CLI import tool.</p>";
+			print_error(__('Error: please upload OPML file.'));
+			return;
+		}
 
+		if (is_file($tmp_file)) {
+			$this->perform_data_import($tmp_file, $_SESSION['uid']);
+			unlink($tmp_file);
+		} else {
+			print_error(__('No file uploaded.'));
+			return;
 		}
 
 		print "<button dojoType=\"dijit.form.Button\"
@@ -434,6 +455,9 @@ class Import_Export extends Plugin implements IHandler {
 
 	}
 
+	function api_version() {
+		return 2;
+	}
 
 }
 ?>
