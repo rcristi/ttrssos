@@ -1,7 +1,7 @@
 Running on OpenShift
 ----------------------------
 
-Create an account at http://openshift.redhat.com/
+Create an account at https://www.openshift.com
 
 Create a PHP 5 application + a PostgreSQL 9 cartridge to the app, and import all the quickstart codes:
 
