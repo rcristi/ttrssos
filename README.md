@@ -3,7 +3,7 @@ Running on OpenShift
 
 Create an account at https://www.openshift.com
 
-Create a PHP 5 application + a PostgreSQL 9 cartridge to the app, and import all the quickstart codes:
+Create a PHP 5 application + a PostgreSQL 9 cartridge to the app, and import the quickstart code:
 
     rhc app create <app name> php-5.3 postgresql-9 cron-1.4 --from-code=https://github.com/openshift-quickstart/tiny_tiny_rss-openshift-quickstart.git
 
