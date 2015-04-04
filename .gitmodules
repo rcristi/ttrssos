@@ -1,6 +1,3 @@
-[submodule "php/themes/feedly"]
-	path = php/themes/feedly
-	url = https://github.com/levito/tt-rss-feedly-theme.git
-[submodule "php/php"]
-	path = php/php
-	url = /home/cristi/Tiny-Tiny-RSS/
+[submodule "php"]
+	path = php
+	url = https://github.com/rcristi/Tiny-Tiny-RSS
